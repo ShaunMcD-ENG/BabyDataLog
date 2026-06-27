@@ -1,0 +1,15 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - babydatalog-data:/data
+    environment:
+      - DATABASE_PATH=/data/babydatalog.db
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
+
+volumes:
+  babydatalog-data:

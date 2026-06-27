@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Baby face outline — two circles for eyes, arc for smile -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,20 a28,28 0 1,0 0.001,0 Z" />
+    <!-- Left eye -->
+    <path
+        android:fillColor="#FF855300"
+        android:pathData="M44,42 a4,4 0 1,0 0.001,0 Z" />
+    <!-- Right eye -->
+    <path
+        android:fillColor="#FF855300"
+        android:pathData="M64,42 a4,4 0 1,0 0.001,0 Z" />
+    <!-- Smile -->
+    <path
+        android:strokeColor="#FF855300"
+        android:strokeWidth="2"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M44,52 Q54,62 64,52" />
+    <!-- BD text hint — star above head -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,10 L56,16 L62,16 L57,20 L59,26 L54,22 L49,26 L51,20 L46,16 L52,16 Z" />
+</vector>

@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App -->
+    <string name="app_name">BabyDataLog</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_feedings">Feedings</string>
+    <string name="nav_nappies">Nappies</string>
+    <string name="nav_milestones">Milestones</string>
+    <string name="nav_summary">Summary</string>
+
+    <!-- Common actions -->
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_confirm_delete">Confirm Delete</string>
+    <string name="action_confirm_delete_message">Are you sure you want to delete this entry? This cannot be undone.</string>
+    <string name="action_export">Export Data</string>
+    <string name="action_import">Import Data</string>
+    <string name="action_export_csv">Export as CSV</string>
+    <string name="action_export_json">Export as JSON</string>
+
+    <!-- Common labels -->
+    <string name="label_date">Date</string>
+    <string name="label_time">Time</string>
+    <string name="label_notes">Notes (optional)</string>
+    <string name="label_no_records">No records yet</string>
+    <string name="label_baby_name">Baby\'s Name</string>
+    <string name="label_birth_date">Birth Date</string>
+    <string name="label_birth_weight">Birth Weight (grams)</string>
+
+    <!-- Feeding screen -->
+    <string name="feeding_log_title">Log Feeding</string>
+    <string name="feeding_edit_title">Edit Feeding</string>
+    <string name="feeding_list_title">Feeding History</string>
+    <string name="feeding_breast_side">Breast Side</string>
+    <string name="feeding_left">Left Breast</string>
+    <string name="feeding_right">Right Breast</string>
+    <string name="feeding_both">Both Breasts</string>
+    <string name="feeding_bottle">Bottle</string>
+    <string name="feeding_baby_state">Baby State</string>
+    <string name="feeding_sleepy">Sleepy</string>
+    <string name="feeding_engaged">Engaged</string>
+    <string name="feeding_latch_quality">Latch Quality</string>
+    <string name="feeding_good_latch">Good Latch</string>
+    <string name="feeding_poor_latch">Poor Latch</string>
+    <string name="feeding_duration">Duration (minutes)</string>
+    <string name="feeding_start_time">Start Time</string>
+    <string name="feeding_end_time">End Time</string>
+    <string name="feeding_timer_running">Timer running…</string>
+    <string name="feeding_timer_start">Start Timer</string>
+    <string name="feeding_timer_stop">Stop Timer</string>
+    <string name="feeding_manual_duration">Enter Duration Manually</string>
+
+    <!-- Nappy screen -->
+    <string name="nappy_log_title">Log Nappy Change</string>
+    <string name="nappy_edit_title">Edit Nappy Change</string>
+    <string name="nappy_list_title">Nappy History</string>
+    <string name="nappy_type">Contents</string>
+    <string name="nappy_pee">Pee</string>
+    <string name="nappy_poo">Poo</string>
+    <string name="nappy_both">Pee &amp; Poo</string>
+    <string name="nappy_amount">Amount</string>
+    <string name="nappy_small">Small</string>
+    <string name="nappy_large">Large</string>
+    <string name="nappy_colour">Poo Colour</string>
+    <string name="nappy_colour_na">N/A (pee only)</string>
+    <string name="nappy_colour_meconium">Newborn Black (Meconium)</string>
+    <string name="nappy_colour_dark_green">Dark Green / Brown (Transitional)</string>
+    <string name="nappy_colour_yellow_seedy">Yellow Seedy (Breastfed normal)</string>
+    <string name="nappy_colour_bright_yellow">Bright Yellow</string>
+    <string name="nappy_colour_green">Green</string>
+    <string name="nappy_colour_brown">Brown</string>
+    <string name="nappy_colour_pale">Pale / White ⚠ See doctor</string>
+    <string name="nappy_colour_red">Red / Blood ⚠ See doctor</string>
+
+    <!-- Milestone screen -->
+    <string name="milestone_log_title">Log Milestone</string>
+    <string name="milestone_edit_title">Edit Milestone</string>
+    <string name="milestone_list_title">Milestones</string>
+    <string name="milestone_title_label">Title</string>
+    <string name="milestone_description">Description</string>
+    <string name="milestone_category">Category</string>
+    <string name="milestone_cat_development">Development</string>
+    <string name="milestone_cat_medical">Medical</string>
+    <string name="milestone_cat_social">Social</string>
+    <string name="milestone_cat_physical">Physical</string>
+    <string name="milestone_cat_first_time">First Time</string>
+    <string name="milestone_add_photo">Add Photo</string>
+    <string name="milestone_photo_content_desc">Milestone photo</string>
+
+    <!-- Summary screen -->
+    <string name="summary_title">Summary</string>
+    <string name="summary_today">Today</string>
+    <string name="summary_this_week">This Week</string>
+    <string name="summary_this_month">This Month</string>
+    <string name="summary_feedings">Feedings</string>
+    <string name="summary_nappy_changes">Nappy Changes</string>
+    <string name="summary_avg_feed_duration">Avg Feed Duration</string>
+    <string name="summary_minutes">min</string>
+    <string name="summary_feeds_per_day">Feeds / Day</string>
+    <string name="summary_nappies_per_day">Nappies / Day</string>
+    <string name="summary_pee_count">Pees</string>
+    <string name="summary_poo_count">Poos</string>
+    <string name="summary_no_data">No data for this period</string>
+
+    <!-- Home screen -->
+    <string name="home_last_feed">Last Feed</string>
+    <string name="home_last_nappy">Last Nappy</string>
+    <string name="home_quick_add">Quick Add</string>
+    <string name="home_time_since">%1$s ago</string>
+    <string name="home_no_recent">None recorded yet</string>
+
+    <!-- Settings / Baby profile -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_baby_profile">Baby Profile</string>
+    <string name="settings_data">Data Management</string>
+
+    <!-- Error messages -->
+    <string name="error_required_field">Please enter a value</string>
+    <string name="error_invalid_date">Invalid date</string>
+    <string name="error_import_failed">Import failed</string>
+    <string name="error_export_failed">Export failed</string>
+    <string name="success_export">Export successful</string>
+    <string name="success_import">Import successful</string>
+    <string name="error_end_before_start">End time must be after start time</string>
+
+    <!-- Growth tracking -->
+    <string name="growth_list_title">Growth</string>
+    <string name="growth_log_title">Log Measurement</string>
+    <string name="growth_edit_title">Edit Measurement</string>
+    <string name="growth_weight">Weight (grams)</string>
+    <string name="growth_weight_hint">e.g. 4200</string>
+    <string name="growth_weight_helper">Leave blank if not recording weight today</string>
+    <string name="growth_height">Height (cm)</string>
+    <string name="growth_height_helper">Leave blank if not recording height today</string>
+    <string name="growth_head_circ">Head Circumference (cm)</string>
+    <string name="growth_head_circ_helper">Measured at health visitor checks</string>
+    <string name="growth_latest_card">Latest Growth</string>
+    <string name="growth_weight_display">Weight: %1$sg (%2$.1fkg)</string>
+    <string name="growth_height_display">Height: %1$.1fcm</string>
+    <string name="growth_no_records">No growth recorded yet</string>
+    <string name="growth_at_least_one">Please enter at least one measurement</string>
+    <string name="nav_growth">Growth</string>
+
+    <!-- Backup &amp; Restore -->
+    <string name="backup_section_title">Backup &amp; Restore</string>
+    <string name="backup_create">Create Backup</string>
+    <string name="backup_restore">Restore from Backup</string>
+    <string name="backup_info">Backups include all data and are forward-compatible across app versions.</string>
+    <string name="backup_success">Backup exported successfully</string>
+    <string name="backup_failed">Backup failed</string>
+    <string name="restore_failed">Restore failed</string>
+</resources>

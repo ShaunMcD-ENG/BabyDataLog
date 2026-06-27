@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Material 3 seed color: warm amber/golden — nurturing, baby-safe feel.
+        The actual color scheme is generated in Kotlin (Color.kt / Theme.kt).
+        This file provides the seed value for reference and any legacy View usage.
+    -->
+    <color name="seed">#FF855300</color>
+
+    <!-- Primary amber palette -->
+    <color name="amber_10">#FF2B1700</color>
+    <color name="amber_20">#FF472A00</color>
+    <color name="amber_30">#FF653E00</color>
+    <color name="amber_40">#FF855300</color>
+    <color name="amber_80">#FFFFB95C</color>
+    <color name="amber_90">#FFFFB3D9</color>
+    <color name="amber_95">#FFFFEED9</color>
+    <color name="amber_99">#FFFFFBFF</color>
+
+    <!-- Secondary peach/rose palette -->
+    <color name="peach_10">#FF380D00</color>
+    <color name="peach_20">#FF5C1900</color>
+    <color name="peach_30">#FF832700</color>
+    <color name="peach_40">#FFAB3700</color>
+    <color name="peach_80">#FFFFB59B</color>
+    <color name="peach_90">#FFFFDBCF</color>
+
+    <!-- Tertiary sage green palette -->
+    <color name="sage_10">#FF002111</color>
+    <color name="sage_20">#FF00391F</color>
+    <color name="sage_30">#FF005230</color>
+    <color name="sage_40">#FF006C42</color>
+    <color name="sage_80">#FF60DBA0</color>
+    <color name="sage_90">#FF7CF7BA</color>
+</resources>
