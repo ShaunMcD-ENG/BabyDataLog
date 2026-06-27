@@ -1,7 +1,8 @@
-import { compare } from "bcryptjs";
+import { compare, hash } from "bcryptjs";
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import type { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
+import db from "@/lib/db/connection";
 
 export interface SessionData {
   authenticated: boolean;
@@ -21,13 +22,36 @@ export async function getSession(cookieStore?: ReadonlyRequestCookies) {
   return getIronSession<SessionData>(cookieStore ?? (await cookies()), SESSION_OPTIONS);
 }
 
+// Returns true if an admin password has been set in the DB
+export function isSetupComplete(): boolean {
+  const row = db
+    .prepare("SELECT value FROM settings WHERE key = 'admin_password_hash'")
+    .get() as { value: string } | undefined;
+  return !!row;
+}
+
 export async function verifyAdminPassword(input: string): Promise<boolean> {
-  const hash = process.env.ADMIN_PASSWORD_HASH;
-  if (!hash) return false;
-  return compare(input, hash);
+  const row = db
+    .prepare("SELECT value FROM settings WHERE key = 'admin_password_hash'")
+    .get() as { value: string } | undefined;
+  if (!row) return false;
+  return compare(input, row.value);
+}
+
+export async function setAdminPassword(password: string): Promise<void> {
+  const hashed = await hash(password, 12);
+  db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_password_hash', ?)`)
+    .run(hashed);
 }
 
 export async function isAuthenticated(): Promise<boolean> {
   const session = await getSession();
   return session.authenticated === true;
+}
+
+export function isValidApiKey(apiKey: string): boolean {
+  const device = db
+    .prepare(`SELECT id FROM devices WHERE apiKey = ? AND status = 'approved'`)
+    .get(apiKey);
+  return !!device;
 }

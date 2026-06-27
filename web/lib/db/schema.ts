@@ -93,10 +93,27 @@ export function runMigrations() {
       resolution   TEXT              -- 'keep_server' | 'keep_device'
     );
 
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT NOT NULL PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS devices (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      deviceId       TEXT    NOT NULL UNIQUE,
+      name           TEXT    NOT NULL,
+      pairingCode    TEXT    NOT NULL,
+      status         TEXT    NOT NULL DEFAULT 'pending',
+      apiKey         TEXT    UNIQUE,
+      registeredAtMs INTEGER NOT NULL,
+      approvedAtMs   INTEGER
+    );
+
     CREATE INDEX IF NOT EXISTS idx_feedings_babyId    ON feeding_sessions(babyId);
     CREATE INDEX IF NOT EXISTS idx_nappies_babyId     ON nappy_changes(babyId);
     CREATE INDEX IF NOT EXISTS idx_milestones_babyId  ON milestones(babyId);
     CREATE INDEX IF NOT EXISTS idx_growth_babyId      ON growth_measurements(babyId);
     CREATE INDEX IF NOT EXISTS idx_conflicts_resolved ON sync_conflicts(resolvedAtMs);
+    CREATE INDEX IF NOT EXISTS idx_devices_apiKey     ON devices(apiKey);
   `);
 }
