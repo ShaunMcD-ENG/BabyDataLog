@@ -37,4 +37,10 @@ interface MilestoneDao {
         """
     )
     fun getMilestonesByCategory(babyId: Long, category: MilestoneCategory): Flow<List<Milestone>>
+
+    @Query("SELECT * FROM milestones")
+    suspend fun getAllForSync(): List<Milestone>
+
+    @Query("SELECT * FROM milestones WHERE syncUuid = :uuid LIMIT 1")
+    suspend fun getByUuid(uuid: String): Milestone?
 }

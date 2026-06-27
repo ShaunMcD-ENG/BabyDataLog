@@ -33,4 +33,10 @@ interface BabyDao {
     /** One-shot query — returns the first baby inserted (lowest id), or null if the table is empty. */
     @Query("SELECT * FROM babies ORDER BY id ASC LIMIT 1")
     suspend fun getFirstBabyOnce(): Baby?
+
+    @Query("SELECT * FROM babies")
+    suspend fun getAllForSync(): List<Baby>
+
+    @Query("SELECT * FROM babies WHERE syncUuid = :uuid LIMIT 1")
+    suspend fun getByUuid(uuid: String): Baby?
 }

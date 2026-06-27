@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MonitorWeight
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -40,6 +41,7 @@ import com.babydatalog.app.ui.screens.nappy.NappyFormScreen
 import com.babydatalog.app.ui.screens.nappy.NappyListScreen
 import com.babydatalog.app.ui.screens.settings.SettingsScreen
 import com.babydatalog.app.ui.screens.summary.SummaryScreen
+import com.babydatalog.app.ui.screens.sync.SyncScreen
 import com.babydatalog.app.viewmodel.BabyViewModel
 import com.babydatalog.app.viewmodel.FeedingViewModel
 import com.babydatalog.app.viewmodel.GrowthViewModel
@@ -63,6 +65,7 @@ object Routes {
     const val GROWTH_EDIT = "growth_edit/{measurementId}"
     const val SUMMARY = "summary"
     const val SETTINGS = "settings"
+    const val SYNC = "sync"
 
     fun feedingEdit(feedingId: Long) = "feeding_edit/$feedingId"
     fun nappyEdit(nappyId: Long) = "nappy_edit/$nappyId"
@@ -114,6 +117,11 @@ fun NavGraph(
             route = Routes.SUMMARY,
             label = "Summary",
             icon = { Icon(Icons.Filled.BarChart, contentDescription = "Summary") }
+        ),
+        BottomNavItem(
+            route = Routes.SYNC,
+            label = "Sync",
+            icon = { Icon(Icons.Filled.Sync, contentDescription = "Sync") }
         )
     )
 
@@ -125,7 +133,8 @@ fun NavGraph(
         Routes.MILESTONE_LIST,
         Routes.GROWTH_LIST,
         Routes.SUMMARY,
-        Routes.SETTINGS
+        Routes.SETTINGS,
+        Routes.SYNC
     )
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -306,6 +315,9 @@ fun NavGraph(
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen()
+            }
+            composable(Routes.SYNC) {
+                SyncScreen()
             }
         }
 

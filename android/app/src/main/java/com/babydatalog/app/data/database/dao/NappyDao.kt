@@ -59,4 +59,10 @@ interface NappyDao {
         """
     )
     fun getNappyCountByType(babyId: Long, startMs: Long, endMs: Long, type: NappyType): Flow<Int>
+
+    @Query("SELECT * FROM nappy_changes")
+    suspend fun getAllForSync(): List<NappyChange>
+
+    @Query("SELECT * FROM nappy_changes WHERE syncUuid = :uuid LIMIT 1")
+    suspend fun getByUuid(uuid: String): NappyChange?
 }

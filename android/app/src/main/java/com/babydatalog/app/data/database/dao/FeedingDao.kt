@@ -57,4 +57,10 @@ interface FeedingDao {
         """
     )
     fun getTotalFeedingsForDay(babyId: Long, dayStartMs: Long, dayEndMs: Long): Flow<Int>
+
+    @Query("SELECT * FROM feeding_sessions")
+    suspend fun getAllForSync(): List<FeedingSession>
+
+    @Query("SELECT * FROM feeding_sessions WHERE syncUuid = :uuid LIMIT 1")
+    suspend fun getByUuid(uuid: String): FeedingSession?
 }

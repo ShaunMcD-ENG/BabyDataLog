@@ -25,4 +25,10 @@ interface GrowthDao {
     // Latest measurement (for home screen)
     @Query("SELECT * FROM growth_measurements WHERE babyId = :babyId ORDER BY timestampMs DESC LIMIT 1")
     fun getLatestMeasurement(babyId: Long): Flow<GrowthMeasurement?>
+
+    @Query("SELECT * FROM growth_measurements")
+    suspend fun getAllForSync(): List<GrowthMeasurement>
+
+    @Query("SELECT * FROM growth_measurements WHERE syncUuid = :uuid LIMIT 1")
+    suspend fun getByUuid(uuid: String): GrowthMeasurement?
 }
