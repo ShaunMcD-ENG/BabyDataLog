@@ -1,5 +1,7 @@
 # BabyDataLog
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Baby tracking app with Android companion and self-hosted web dashboard.
 
 ## Structure
