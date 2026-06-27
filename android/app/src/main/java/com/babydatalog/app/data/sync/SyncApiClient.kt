@@ -43,9 +43,9 @@ class SyncApiClient @Inject constructor() {
     ).parse { }
 
     suspend fun pull(
-        serverUrl: String, apiKey: String, deviceId: String, lastSyncMs: Long
+        serverUrl: String, apiKey: String
     ): ApiResult<SyncPullResponse> = get(
-        url = "$serverUrl/api/sync?deviceId=$deviceId&lastSyncMs=$lastSyncMs",
+        url = "$serverUrl/api/sync",
         apiKey = apiKey
     ).parse { json.decodeFromString<SyncPullResponse>(it) }
 

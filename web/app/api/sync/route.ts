@@ -84,22 +84,19 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, ...results });
 }
 
-// GET /api/sync?deviceId=...&lastSyncMs=... — Android pulls server changes
+// GET /api/sync — Android pulls all server data (full pull, no timestamp filter)
+// Filtering by createdAtMs is intentionally absent: a device may have been offline
+// and added records with old timestamps that arrived on the server after the client's
+// last sync. Always returning everything keeps offline edits from being silently missed.
 export async function GET(req: NextRequest) {
   if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(req.url);
-  const lastSyncMs = parseInt(searchParams.get("lastSyncMs") ?? "0", 10);
-
   const payload: Record<string, unknown[]> = {};
 
   for (const table of SYNC_TABLES) {
-    const rows = db
-      .prepare(`SELECT * FROM ${table} WHERE createdAtMs > ?`)
-      .all(lastSyncMs);
-    payload[table] = rows;
+    payload[table] = db.prepare(`SELECT * FROM ${table}`).all();
   }
 
   const pendingConflicts = db

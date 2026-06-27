@@ -68,7 +68,7 @@ class SyncRepository @Inject constructor(
         val pushError = pushAll(serverUrl, apiKey, deviceId)
         if (pushError != null) return SyncResult.Error(pushError)
 
-        val pullResult = api.pull(serverUrl, apiKey, deviceId, prefs.lastSyncMs)
+        val pullResult = api.pull(serverUrl, apiKey)
         if (pullResult.error != null) return SyncResult.Error("Pull failed: ${pullResult.error}")
 
         pullResult.data?.let { applyPull(it) }
