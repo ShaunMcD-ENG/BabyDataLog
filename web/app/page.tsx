@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { isAuthenticated, isSetupComplete, getSession } from "@/lib/auth";
 import { cookies } from "next/headers";
 import db from "@/lib/db/connection";
+import Link from "next/link";
 import ClearDatabaseButton from "./ClearDatabaseButton";
 
 export const dynamic = "force-dynamic";
@@ -136,9 +137,21 @@ export default async function DashboardPage() {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1a1a2e", margin: 0 }}>BabyDataLog</h1>
           <p style={{ fontSize: 13, color: "#888", marginTop: 3 }}>Sync Server</p>
         </div>
-        <form action={logout}>
-          <button type="submit" style={s.btnGhost}>Log out</button>
-        </form>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <Link
+            href="/db"
+            style={{
+              ...s.btnGhost,
+              textDecoration: "none",
+              display: "inline-block",
+            }}
+          >
+            View Database
+          </Link>
+          <form action={logout}>
+            <button type="submit" style={s.btnGhost}>Log out</button>
+          </form>
+        </div>
       </div>
 
       {/* ── Pending Devices ── */}
