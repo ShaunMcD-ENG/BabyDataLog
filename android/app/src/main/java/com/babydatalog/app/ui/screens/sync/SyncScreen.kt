@@ -29,10 +29,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -189,6 +192,16 @@ private fun ConnectedContent(
     onDisconnect: () -> Unit
 ) {
     var showWipeConfirm by remember { mutableStateOf(false) }
+    var secondsUntilSync by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(state.lastSyncMs) {
+        if (state.lastSyncMs <= 0L) { secondsUntilSync = 0L; return@LaunchedEffect }
+        while (true) {
+            val nextMs = state.lastSyncMs + AUTO_SYNC_INTERVAL_MS
+            secondsUntilSync = maxOf(0L, (nextMs - System.currentTimeMillis()) / 1000L)
+            delay(1_000L)
+        }
+    }
 
     if (showWipeConfirm) {
         AlertDialog(
@@ -238,12 +251,24 @@ private fun ConnectedContent(
         }
     }
 
-    Text(
-        text = if (state.lastSyncMs > 0) "Last sync: ${formatSyncTime(state.lastSyncMs)}" else "Never synced",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(bottom = 16.dp)
-    )
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = if (state.lastSyncMs > 0) "Last sync: ${formatSyncTime(state.lastSyncMs)}" else "Never synced",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (state.lastSyncMs > 0L) {
+            Text(
+                text = if (secondsUntilSync > 0L) "Next: ${formatCountdown(secondsUntilSync)}" else "Syncing soon…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 
     state.syncError?.let { error ->
         Surface(
@@ -360,6 +385,8 @@ private fun ErrorContent(state: SyncUiState.Error, onDismiss: () -> Unit) {
     }
 }
 
+private const val AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000L
+
 private fun formatSyncTime(ms: Long): String {
     val diff = System.currentTimeMillis() - ms
     return when {
@@ -368,4 +395,10 @@ private fun formatSyncTime(ms: Long): String {
         diff < 86_400_000L -> "${diff / 3_600_000}h ago"
         else -> SimpleDateFormat("d MMM HH:mm", Locale.getDefault()).format(Date(ms))
     }
+}
+
+private fun formatCountdown(seconds: Long): String {
+    val m = seconds / 60
+    val s = seconds % 60
+    return "%d:%02d".format(m, s)
 }
