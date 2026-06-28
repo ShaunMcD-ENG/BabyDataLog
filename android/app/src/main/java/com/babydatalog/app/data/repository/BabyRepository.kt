@@ -18,16 +18,14 @@ class BabyRepository @Inject constructor(
 
     suspend fun getBabyByIdOnce(id: Long): Baby? = babyDao.getBabyByIdOnce(id)
 
-    suspend fun insertBaby(baby: Baby): Long = babyDao.insertBaby(baby)
+    suspend fun insertBaby(baby: Baby): Long =
+        babyDao.insertBaby(baby.copy(updatedAtMs = System.currentTimeMillis()))
 
-    suspend fun updateBaby(baby: Baby) = babyDao.updateBaby(baby)
+    suspend fun updateBaby(baby: Baby) =
+        babyDao.updateBaby(baby.copy(updatedAtMs = System.currentTimeMillis()))
 
     suspend fun deleteBaby(baby: Baby) = babyDao.deleteBaby(baby)
 
-    /**
-     * Returns the first baby in the database (by insertion order), or creates one with
-     * sensible defaults if the table is empty. Useful for single-baby UX flows.
-     */
     suspend fun getOrCreateDefaultBaby(): Baby {
         val existing = babyDao.getFirstBabyOnce()
         if (existing != null) return existing
@@ -38,7 +36,8 @@ class BabyRepository @Inject constructor(
             name = "Baby",
             birthDateMs = now,
             birthWeightGrams = null,
-            createdAtMs = now
+            createdAtMs = now,
+            updatedAtMs = now
         )
         val newId = babyDao.insertBaby(default)
         return default.copy(id = newId)

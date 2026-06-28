@@ -26,9 +26,10 @@ data class NappyChange(
     val syncUuid: String,
     val babyId: Long,
     val timestampMs: Long,
-    val type: NappyType,           // enum
-    val amount: NappyAmount,       // enum
-    val pooColour: PooColour?,     // null when type == PEE
+    val type: NappyType,
+    val amount: NappyAmount,
+    val pooColour: PooColour?,
     val notes: String?,
-    val createdAtMs: Long
+    val createdAtMs: Long,
+    val updatedAtMs: Long = System.currentTimeMillis()
 )

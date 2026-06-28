@@ -29,7 +29,11 @@ object DatabaseModule {
             BabyDataLogDatabase::class.java,
             "babydatalog.db"
         )
-            .addMigrations(BabyDataLogDatabase.MIGRATION_1_2, BabyDataLogDatabase.MIGRATION_2_3)
+            .addMigrations(
+                BabyDataLogDatabase.MIGRATION_1_2,
+                BabyDataLogDatabase.MIGRATION_2_3,
+                BabyDataLogDatabase.MIGRATION_3_4
+            )
             .build()
     }
 

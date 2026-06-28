@@ -27,6 +27,7 @@ data class Milestone(
     val title: String,
     val description: String?,
     val category: MilestoneCategory,
-    val photoUri: String?,         // content URI string for photo
-    val createdAtMs: Long
+    val photoUri: String?,
+    val createdAtMs: Long,
+    val updatedAtMs: Long = System.currentTimeMillis()
 )

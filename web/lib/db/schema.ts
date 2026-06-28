@@ -6,12 +6,13 @@ import db from "./connection";
 export function runMigrations() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS babies (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      syncUuid     TEXT    NOT NULL UNIQUE,
-      name         TEXT    NOT NULL,
-      birthDateMs  INTEGER NOT NULL,
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      syncUuid         TEXT    NOT NULL UNIQUE,
+      name             TEXT    NOT NULL,
+      birthDateMs      INTEGER NOT NULL,
       birthWeightGrams INTEGER,
-      createdAtMs  INTEGER NOT NULL
+      createdAtMs      INTEGER NOT NULL,
+      updatedAtMs      INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS feeding_sessions (
@@ -25,7 +26,8 @@ export function runMigrations() {
       babyState       TEXT,
       latchQuality    TEXT,
       notes           TEXT,
-      createdAtMs     INTEGER NOT NULL
+      createdAtMs     INTEGER NOT NULL,
+      updatedAtMs     INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS nappy_changes (
@@ -37,7 +39,8 @@ export function runMigrations() {
       amount      TEXT    NOT NULL,
       pooColour   TEXT,
       notes       TEXT,
-      createdAtMs INTEGER NOT NULL
+      createdAtMs INTEGER NOT NULL,
+      updatedAtMs INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS milestones (
@@ -49,7 +52,8 @@ export function runMigrations() {
       description TEXT,
       category    TEXT    NOT NULL,
       photoUri    TEXT,
-      createdAtMs INTEGER NOT NULL
+      createdAtMs INTEGER NOT NULL,
+      updatedAtMs INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS growth_measurements (
@@ -66,31 +70,32 @@ export function runMigrations() {
       armLengthCm          REAL,
       backLengthCm         REAL,
       notes                TEXT,
-      createdAtMs          INTEGER NOT NULL
+      createdAtMs          INTEGER NOT NULL,
+      updatedAtMs          INTEGER NOT NULL DEFAULT 0
     );
 
-    -- Sync tracking: records which device last sent/received each record
+    -- Sync tracking
     CREATE TABLE IF NOT EXISTS sync_log (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       deviceId    TEXT    NOT NULL,
       table_name  TEXT    NOT NULL,
       syncUuid    TEXT    NOT NULL,
-      action      TEXT    NOT NULL, -- 'push' | 'pull' | 'conflict'
-      resolvedBy  TEXT,             -- 'server' | 'device' | 'pending'
+      action      TEXT    NOT NULL,
+      resolvedBy  TEXT,
       syncedAtMs  INTEGER NOT NULL
     );
 
-    -- Conflict queue: records where both device and server changed the same row
+    -- Kept for schema compatibility; auto-resolved conflicts are no longer queued here
     CREATE TABLE IF NOT EXISTS sync_conflicts (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       table_name   TEXT    NOT NULL,
       syncUuid     TEXT    NOT NULL,
       deviceId     TEXT    NOT NULL,
-      serverJson   TEXT    NOT NULL, -- JSON snapshot of server version
-      deviceJson   TEXT    NOT NULL, -- JSON snapshot of device version
+      serverJson   TEXT    NOT NULL,
+      deviceJson   TEXT    NOT NULL,
       createdAtMs  INTEGER NOT NULL,
       resolvedAtMs INTEGER,
-      resolution   TEXT              -- 'keep_server' | 'keep_device'
+      resolution   TEXT
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -115,5 +120,29 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_growth_babyId      ON growth_measurements(babyId);
     CREATE INDEX IF NOT EXISTS idx_conflicts_resolved ON sync_conflicts(resolvedAtMs);
     CREATE INDEX IF NOT EXISTS idx_devices_apiKey     ON devices(apiKey);
+  `);
+
+  // Add updatedAtMs to any table that existed before this column was introduced.
+  // PRAGMA table_info is safe to call repeatedly; ALTER TABLE only runs if needed.
+  const DATA_TABLES = [
+    "babies", "feeding_sessions", "nappy_changes", "milestones", "growth_measurements",
+  ] as const;
+
+  for (const table of DATA_TABLES) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === "updatedAtMs")) {
+      db.prepare(`ALTER TABLE ${table} ADD COLUMN updatedAtMs INTEGER NOT NULL DEFAULT 0`).run();
+      // Seed existing rows so they are visible to pull filtering immediately
+      db.prepare(`UPDATE ${table} SET updatedAtMs = createdAtMs`).run();
+    }
+  }
+
+  // Index for efficient pull filtering — safe to run if already exists
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_feedings_updatedAt   ON feeding_sessions(updatedAtMs);
+    CREATE INDEX IF NOT EXISTS idx_nappies_updatedAt    ON nappy_changes(updatedAtMs);
+    CREATE INDEX IF NOT EXISTS idx_milestones_updatedAt ON milestones(updatedAtMs);
+    CREATE INDEX IF NOT EXISTS idx_growth_updatedAt     ON growth_measurements(updatedAtMs);
+    CREATE INDEX IF NOT EXISTS idx_babies_updatedAt     ON babies(updatedAtMs);
   `);
 }

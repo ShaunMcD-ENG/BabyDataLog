@@ -28,40 +28,35 @@ class FeedingRepository @Inject constructor(
         feedingDao.getTotalFeedingsForDay(babyId, dayStartMs, dayEndMs)
 
     suspend fun insertFeeding(feeding: FeedingSession): Long =
-        feedingDao.insertFeeding(feeding)
+        feedingDao.insertFeeding(feeding.copy(updatedAtMs = System.currentTimeMillis()))
 
     suspend fun updateFeeding(feeding: FeedingSession) =
-        feedingDao.updateFeeding(feeding)
+        feedingDao.updateFeeding(feeding.copy(updatedAtMs = System.currentTimeMillis()))
 
     suspend fun deleteFeeding(feeding: FeedingSession) =
         feedingDao.deleteFeeding(feeding)
 
-    /**
-     * Inserts the feeding if id == 0 (new record), otherwise updates the existing row.
-     * Automatically generates a syncUuid when inserting.
-     */
     suspend fun upsertFeeding(feeding: FeedingSession) {
+        val now = System.currentTimeMillis()
         if (feeding.id == 0L) {
-            val withUuid = if (feeding.syncUuid.isBlank()) {
-                feeding.copy(syncUuid = UUID.randomUUID().toString())
-            } else {
-                feeding
-            }
-            feedingDao.insertFeeding(withUuid)
+            feedingDao.insertFeeding(
+                feeding.copy(
+                    syncUuid = if (feeding.syncUuid.isBlank()) UUID.randomUUID().toString() else feeding.syncUuid,
+                    updatedAtMs = now
+                )
+            )
         } else {
-            feedingDao.updateFeeding(feeding)
+            feedingDao.updateFeeding(feeding.copy(updatedAtMs = now))
         }
     }
 
-    /**
-     * If both startTimeMs and endTimeMs are present, computes durationMinutes and
-     * persists the updated record. Returns the updated FeedingSession, or the original
-     * if endTimeMs is null.
-     */
     suspend fun calculateAndSaveDuration(feeding: FeedingSession): FeedingSession {
         val endTime = feeding.endTimeMs ?: return feeding
         val durationMinutes = (endTime - feeding.startTimeMs) / 60_000f
-        val updated = feeding.copy(durationMinutes = durationMinutes)
+        val updated = feeding.copy(
+            durationMinutes = durationMinutes,
+            updatedAtMs = System.currentTimeMillis()
+        )
         feedingDao.updateFeeding(updated)
         return updated
     }

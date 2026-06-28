@@ -26,35 +26,29 @@ class NappyRepository @Inject constructor(
         nappyDao.getLastNappy(babyId)
 
     fun getNappyCountByType(
-        babyId: Long,
-        startMs: Long,
-        endMs: Long,
-        type: NappyType
+        babyId: Long, startMs: Long, endMs: Long, type: NappyType
     ): Flow<Int> = nappyDao.getNappyCountByType(babyId, startMs, endMs, type)
 
     suspend fun insertNappy(nappy: NappyChange): Long =
-        nappyDao.insertNappy(nappy)
+        nappyDao.insertNappy(nappy.copy(updatedAtMs = System.currentTimeMillis()))
 
     suspend fun updateNappy(nappy: NappyChange) =
-        nappyDao.updateNappy(nappy)
+        nappyDao.updateNappy(nappy.copy(updatedAtMs = System.currentTimeMillis()))
 
     suspend fun deleteNappy(nappy: NappyChange) =
         nappyDao.deleteNappy(nappy)
 
-    /**
-     * Inserts the record if id == 0 (new record), otherwise updates the existing row.
-     * Automatically generates a syncUuid when inserting.
-     */
     suspend fun upsertNappy(nappy: NappyChange) {
+        val now = System.currentTimeMillis()
         if (nappy.id == 0L) {
-            val withUuid = if (nappy.syncUuid.isBlank()) {
-                nappy.copy(syncUuid = UUID.randomUUID().toString())
-            } else {
-                nappy
-            }
-            nappyDao.insertNappy(withUuid)
+            nappyDao.insertNappy(
+                nappy.copy(
+                    syncUuid = if (nappy.syncUuid.isBlank()) UUID.randomUUID().toString() else nappy.syncUuid,
+                    updatedAtMs = now
+                )
+            )
         } else {
-            nappyDao.updateNappy(nappy)
+            nappyDao.updateNappy(nappy.copy(updatedAtMs = now))
         }
     }
 }

@@ -24,7 +24,7 @@ import com.babydatalog.app.data.database.entity.NappyChange
         Milestone::class,
         GrowthMeasurement::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -66,6 +66,22 @@ abstract class BabyDataLogDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE `growth_measurements` ADD COLUMN `legLengthCm` REAL")
                 database.execSQL("ALTER TABLE `growth_measurements` ADD COLUMN `armLengthCm` REAL")
                 database.execSQL("ALTER TABLE `growth_measurements` ADD COLUMN `backLengthCm` REAL")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                val tables = listOf(
+                    "babies", "feeding_sessions", "nappy_changes",
+                    "milestones", "growth_measurements"
+                )
+                for (table in tables) {
+                    database.execSQL(
+                        "ALTER TABLE `$table` ADD COLUMN `updatedAtMs` INTEGER NOT NULL DEFAULT 0"
+                    )
+                    // Seed existing rows so they participate in pull filtering immediately
+                    database.execSQL("UPDATE `$table` SET `updatedAtMs` = `createdAtMs`")
+                }
             }
         }
     }

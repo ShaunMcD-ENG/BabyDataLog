@@ -23,28 +23,25 @@ class MilestoneRepository @Inject constructor(
         milestoneDao.getMilestonesByCategory(babyId, category)
 
     suspend fun insertMilestone(milestone: Milestone): Long =
-        milestoneDao.insertMilestone(milestone)
+        milestoneDao.insertMilestone(milestone.copy(updatedAtMs = System.currentTimeMillis()))
 
     suspend fun updateMilestone(milestone: Milestone) =
-        milestoneDao.updateMilestone(milestone)
+        milestoneDao.updateMilestone(milestone.copy(updatedAtMs = System.currentTimeMillis()))
 
     suspend fun deleteMilestone(milestone: Milestone) =
         milestoneDao.deleteMilestone(milestone)
 
-    /**
-     * Inserts the record if id == 0 (new record), otherwise updates the existing row.
-     * Automatically generates a syncUuid when inserting.
-     */
     suspend fun upsertMilestone(milestone: Milestone) {
+        val now = System.currentTimeMillis()
         if (milestone.id == 0L) {
-            val withUuid = if (milestone.syncUuid.isBlank()) {
-                milestone.copy(syncUuid = UUID.randomUUID().toString())
-            } else {
-                milestone
-            }
-            milestoneDao.insertMilestone(withUuid)
+            milestoneDao.insertMilestone(
+                milestone.copy(
+                    syncUuid = if (milestone.syncUuid.isBlank()) UUID.randomUUID().toString() else milestone.syncUuid,
+                    updatedAtMs = now
+                )
+            )
         } else {
-            milestoneDao.updateMilestone(milestone)
+            milestoneDao.updateMilestone(milestone.copy(updatedAtMs = now))
         }
     }
 }

@@ -68,7 +68,7 @@ class SyncRepository @Inject constructor(
         val pushError = pushAll(serverUrl, apiKey, deviceId)
         if (pushError != null) return SyncResult.Error(pushError)
 
-        val pullResult = api.pull(serverUrl, apiKey)
+        val pullResult = api.pull(serverUrl, apiKey, prefs.lastSyncMs)
         if (pullResult.error != null) return SyncResult.Error("Pull failed: ${pullResult.error}")
 
         pullResult.data?.let { applyPull(it) }
@@ -88,7 +88,6 @@ class SyncRepository @Inject constructor(
             TablePush("milestones", milestoneDao.getAllForSync().map { json.encodeToJsonElement(it.toSync()) }),
             TablePush("growth_measurements", growthDao.getAllForSync().map { json.encodeToJsonElement(it.toSync()) })
         )
-
         for (table in tables) {
             if (table.records.isEmpty()) continue
             val r = api.push(serverUrl, apiKey, deviceId, table.name, JsonArray(table.records))
@@ -98,19 +97,22 @@ class SyncRepository @Inject constructor(
     }
 
     private suspend fun applyPull(pull: SyncPullResponse) {
-        // Upsert babies first, then build serverBabyId → localBabyId map
+        // Babies first so child-record babyId remapping can resolve
         val pulledBabies = pull.data["babies"]?.jsonArray
             ?.map { json.decodeFromJsonElement<SyncBaby>(it) } ?: emptyList()
 
         for (serverBaby in pulledBabies) {
             val existing = babyDao.getByUuid(serverBaby.syncUuid)
             if (existing != null) {
-                babyDao.updateBaby(serverBaby.toEntity().copy(id = existing.id))
+                if (serverBaby.updatedAtMs > existing.updatedAtMs) {
+                    babyDao.updateBaby(serverBaby.toEntity().copy(id = existing.id))
+                }
             } else {
                 babyDao.insertBaby(serverBaby.toEntity().copy(id = 0L))
             }
         }
 
+        // Map server baby ids → local baby ids for FK remapping
         val babyIdMap = pulledBabies.mapNotNull { serverBaby ->
             val local = babyDao.getByUuid(serverBaby.syncUuid) ?: return@mapNotNull null
             serverBaby.id to local.id
@@ -120,32 +122,44 @@ class SyncRepository @Inject constructor(
             val record = json.decodeFromJsonElement<SyncFeeding>(el)
             val entity = record.toEntity().copy(babyId = babyIdMap[record.babyId] ?: record.babyId)
             val existing = feedingDao.getByUuid(record.syncUuid)
-            if (existing != null) feedingDao.updateFeeding(entity.copy(id = existing.id))
-            else feedingDao.insertFeeding(entity.copy(id = 0L))
+            when {
+                existing == null -> feedingDao.insertFeeding(entity.copy(id = 0L))
+                record.updatedAtMs > existing.updatedAtMs ->
+                    feedingDao.updateFeeding(entity.copy(id = existing.id))
+            }
         }
 
         pull.data["nappy_changes"]?.jsonArray?.forEach { el ->
             val record = json.decodeFromJsonElement<SyncNappy>(el)
             val entity = record.toEntity().copy(babyId = babyIdMap[record.babyId] ?: record.babyId)
             val existing = nappyDao.getByUuid(record.syncUuid)
-            if (existing != null) nappyDao.updateNappy(entity.copy(id = existing.id))
-            else nappyDao.insertNappy(entity.copy(id = 0L))
+            when {
+                existing == null -> nappyDao.insertNappy(entity.copy(id = 0L))
+                record.updatedAtMs > existing.updatedAtMs ->
+                    nappyDao.updateNappy(entity.copy(id = existing.id))
+            }
         }
 
         pull.data["milestones"]?.jsonArray?.forEach { el ->
             val record = json.decodeFromJsonElement<SyncMilestone>(el)
             val entity = record.toEntity().copy(babyId = babyIdMap[record.babyId] ?: record.babyId)
             val existing = milestoneDao.getByUuid(record.syncUuid)
-            if (existing != null) milestoneDao.updateMilestone(entity.copy(id = existing.id))
-            else milestoneDao.insertMilestone(entity.copy(id = 0L))
+            when {
+                existing == null -> milestoneDao.insertMilestone(entity.copy(id = 0L))
+                record.updatedAtMs > existing.updatedAtMs ->
+                    milestoneDao.updateMilestone(entity.copy(id = existing.id))
+            }
         }
 
         pull.data["growth_measurements"]?.jsonArray?.forEach { el ->
             val record = json.decodeFromJsonElement<SyncGrowth>(el)
             val entity = record.toEntity().copy(babyId = babyIdMap[record.babyId] ?: record.babyId)
             val existing = growthDao.getByUuid(record.syncUuid)
-            if (existing != null) growthDao.updateMeasurement(entity.copy(id = existing.id))
-            else growthDao.insertMeasurement(entity.copy(id = 0L))
+            when {
+                existing == null -> growthDao.insertMeasurement(entity.copy(id = 0L))
+                record.updatedAtMs > existing.updatedAtMs ->
+                    growthDao.updateMeasurement(entity.copy(id = existing.id))
+            }
         }
     }
 
