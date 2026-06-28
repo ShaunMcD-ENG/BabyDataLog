@@ -143,7 +143,7 @@ fun SettingsScreen(
 
                 OutlinedButton(
                     onClick = {
-                        importBackupLauncher.launch("text/csv")
+                        importBackupLauncher.launch("*/*")
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {

@@ -46,6 +46,7 @@ data class SyncBaby(
 @Serializable
 data class SyncFeeding(
     val id: Long, val syncUuid: String, val babyId: Long,
+    val babySyncUuid: String = "",
     val startTimeMs: Long, val endTimeMs: Long?, val durationMinutes: Float?,
     val breastSide: String, val babyState: String?, val latchQuality: String?,
     val notes: String?, val createdAtMs: Long, val updatedAtMs: Long,
@@ -55,6 +56,7 @@ data class SyncFeeding(
 @Serializable
 data class SyncNappy(
     val id: Long, val syncUuid: String, val babyId: Long,
+    val babySyncUuid: String = "",
     val timestampMs: Long, val type: String, val amount: String,
     val pooColour: String?, val notes: String?,
     val createdAtMs: Long, val updatedAtMs: Long,
@@ -64,6 +66,7 @@ data class SyncNappy(
 @Serializable
 data class SyncMilestone(
     val id: Long, val syncUuid: String, val babyId: Long,
+    val babySyncUuid: String = "",
     val timestampMs: Long, val title: String, val description: String?,
     val category: String, val photoUri: String?,
     val createdAtMs: Long, val updatedAtMs: Long,
@@ -73,6 +76,7 @@ data class SyncMilestone(
 @Serializable
 data class SyncGrowth(
     val id: Long, val syncUuid: String, val babyId: Long,
+    val babySyncUuid: String = "",
     val timestampMs: Long, val weightGrams: Int?, val heightCm: Float?,
     val headCircumferenceCm: Float?, val footSizeMm: Int?, val handSizeMm: Int?,
     val legLengthCm: Float?, val armLengthCm: Float?, val backLengthCm: Float?,

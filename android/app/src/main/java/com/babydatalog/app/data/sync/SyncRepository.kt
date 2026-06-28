@@ -83,12 +83,25 @@ class SyncRepository @Inject constructor(
     private suspend fun pushAll(serverUrl: String, apiKey: String, deviceId: String): String? {
         data class TablePush(val name: String, val records: List<kotlinx.serialization.json.JsonElement>)
 
+        // Build id→syncUuid map so child records can include babySyncUuid.
+        // The server uses babySyncUuid to resolve the correct server-side babyId,
+        // since local auto-increment IDs differ between devices.
+        val babyUuidMap = babyDao.getAllForSync().associate { it.id to it.syncUuid }
+
         val tables = listOf(
             TablePush("babies", babyDao.getAllForSync().map { json.encodeToJsonElement(it.toSync()) }),
-            TablePush("feeding_sessions", feedingDao.getAllForSync().map { json.encodeToJsonElement(it.toSync()) }),
-            TablePush("nappy_changes", nappyDao.getAllForSync().map { json.encodeToJsonElement(it.toSync()) }),
-            TablePush("milestones", milestoneDao.getAllForSync().map { json.encodeToJsonElement(it.toSync()) }),
-            TablePush("growth_measurements", growthDao.getAllForSync().map { json.encodeToJsonElement(it.toSync()) })
+            TablePush("feeding_sessions", feedingDao.getAllForSync().map {
+                json.encodeToJsonElement(it.toSync().copy(babySyncUuid = babyUuidMap[it.babyId] ?: ""))
+            }),
+            TablePush("nappy_changes", nappyDao.getAllForSync().map {
+                json.encodeToJsonElement(it.toSync().copy(babySyncUuid = babyUuidMap[it.babyId] ?: ""))
+            }),
+            TablePush("milestones", milestoneDao.getAllForSync().map {
+                json.encodeToJsonElement(it.toSync().copy(babySyncUuid = babyUuidMap[it.babyId] ?: ""))
+            }),
+            TablePush("growth_measurements", growthDao.getAllForSync().map {
+                json.encodeToJsonElement(it.toSync().copy(babySyncUuid = babyUuidMap[it.babyId] ?: ""))
+            })
         )
         for (table in tables) {
             if (table.records.isEmpty()) continue

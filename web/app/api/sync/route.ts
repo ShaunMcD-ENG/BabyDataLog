@@ -54,37 +54,58 @@ export async function POST(req: NextRequest) {
   const now = Date.now();
   const results = { inserted: 0, updated: 0, skipped: 0 };
 
-  for (const record of records) {
+  // Columns that exist only in the push payload, not in the DB schema
+  const PAYLOAD_ONLY_COLS = new Set(["babySyncUuid"]);
+
+  for (let record of records) {
+    // Remap babyId for child tables: local auto-increment IDs differ between
+    // devices, so the client includes babySyncUuid for us to resolve the
+    // correct server-side baby id.
+    if (table !== "babies" && record.babySyncUuid) {
+      const baby = db
+        .prepare("SELECT id FROM babies WHERE syncUuid = ?")
+        .get(record.babySyncUuid) as { id: number } | undefined;
+      if (!baby) {
+        logger.warn("SYNC_PUSH_BABY_NOT_FOUND", { deviceId, table, babySyncUuid: record.babySyncUuid });
+        results.skipped++;
+        continue;
+      }
+      record = { ...record, babyId: baby.id };
+    }
+
+    // Strip payload-only fields before building SQL
+    const dbRecord = Object.fromEntries(
+      Object.entries(record).filter(([k]) => !PAYLOAD_ONLY_COLS.has(k))
+    ) as SyncRecord;
+
     const existing = db
       .prepare(`SELECT * FROM ${table} WHERE syncUuid = ?`)
-      .get(record.syncUuid) as SyncRecord | undefined;
+      .get(dbRecord.syncUuid) as SyncRecord | undefined;
 
     if (!existing) {
-      const cols = Object.keys(record);
+      const cols = Object.keys(dbRecord);
       const placeholders = cols.map(() => "?").join(", ");
       db.prepare(
         `INSERT OR IGNORE INTO ${table} (${cols.join(", ")}) VALUES (${placeholders})`
-      ).run(...cols.map((c) => record[c] as unknown));
+      ).run(...cols.map((c) => dbRecord[c] as unknown));
       db.prepare(
         `INSERT INTO sync_log (deviceId, table_name, syncUuid, action, syncedAtMs) VALUES (?,?,?,?,?)`
-      ).run(deviceId, table, record.syncUuid, "push", now);
+      ).run(deviceId, table, dbRecord.syncUuid, "push", now);
       results.inserted++;
     } else {
       const serverUpdatedAt = (existing.updatedAtMs ?? existing.createdAtMs ?? 0) as number;
-      const deviceUpdatedAt = (record.updatedAtMs ?? record.createdAtMs ?? 0) as number;
+      const deviceUpdatedAt = (dbRecord.updatedAtMs ?? dbRecord.createdAtMs ?? 0) as number;
 
       if (deviceUpdatedAt > serverUpdatedAt) {
-        // Device version is newer — apply it
-        const cols = Object.keys(record).filter((c) => c !== "id" && c !== "syncUuid");
+        const cols = Object.keys(dbRecord).filter((c) => c !== "id" && c !== "syncUuid");
         const assignments = cols.map((c) => `${c} = ?`).join(", ");
         db.prepare(`UPDATE ${table} SET ${assignments} WHERE syncUuid = ?`)
-          .run(...cols.map((c) => record[c] as unknown), record.syncUuid);
+          .run(...cols.map((c) => dbRecord[c] as unknown), dbRecord.syncUuid);
         db.prepare(
           `INSERT INTO sync_log (deviceId, table_name, syncUuid, action, syncedAtMs) VALUES (?,?,?,?,?)`
-        ).run(deviceId, table, record.syncUuid, "updated", now);
+        ).run(deviceId, table, dbRecord.syncUuid, "updated", now);
         results.updated++;
       } else {
-        // Server version is same age or newer — keep it
         results.skipped++;
       }
     }
