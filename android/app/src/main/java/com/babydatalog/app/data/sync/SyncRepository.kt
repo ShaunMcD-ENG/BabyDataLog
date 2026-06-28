@@ -73,7 +73,11 @@ class SyncRepository @Inject constructor(
         val pullResult = api.pull(serverUrl, apiKey, prefs.lastSyncMs)
         if (pullResult.error != null) return SyncResult.Error("Pull failed: ${pullResult.error}")
 
-        pullResult.data?.let { applyPull(it) }
+        try {
+            pullResult.data?.let { applyPull(it) }
+        } catch (e: Exception) {
+            return SyncResult.Error("Pull apply failed: ${e.javaClass.simpleName}: ${e.message}")
+        }
         prefs.lastSyncMs = System.currentTimeMillis()
         return SyncResult.Success
     }
