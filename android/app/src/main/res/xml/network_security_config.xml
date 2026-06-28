@@ -1,15 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow plain HTTP to private/local network addresses only.
-         Production internet traffic still requires HTTPS. -->
-    <domain-config cleartextTrafficPermitted="true">
-        <!-- 10.x.x.x -->
-        <domain includeSubdomains="true">10.0.0.0</domain>
-        <!-- 192.168.x.x -->
-        <domain includeSubdomains="true">192.168.0.0</domain>
-        <!-- 172.16–31.x.x -->
-        <domain includeSubdomains="true">172.16.0.0</domain>
-        <!-- localhost -->
-        <domain includeSubdomains="true">localhost</domain>
-    </domain-config>
+    <!--
+      Cleartext HTTP is permitted for all connections from this app.
+      This app only ever connects to a user-configured home server on the
+      local network, so plain HTTP is acceptable. If a self-signed HTTPS
+      cert is configured via SSL_CERT_PATH on the server, the bundled CA
+      cert below will be used to trust it without a system popup.
+    -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system"/>
+            <!-- Uncomment and add res/raw/babydatalog_ca.pem to trust a
+                 self-signed cert on your server without any popup:
+            <certificates src="@raw/babydatalog_ca"/>
+            -->
+        </trust-anchors>
+    </base-config>
 </network-security-config>
