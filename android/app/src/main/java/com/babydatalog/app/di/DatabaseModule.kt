@@ -33,7 +33,8 @@ object DatabaseModule {
                 BabyDataLogDatabase.MIGRATION_1_2,
                 BabyDataLogDatabase.MIGRATION_2_3,
                 BabyDataLogDatabase.MIGRATION_3_4,
-                BabyDataLogDatabase.MIGRATION_4_5
+                BabyDataLogDatabase.MIGRATION_4_5,
+                BabyDataLogDatabase.MIGRATION_5_6
             )
             .build()
     }

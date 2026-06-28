@@ -6,6 +6,8 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.babydatalog.app.data.database.dao.BabyDao
+import com.babydatalog.app.utils.floorToDay
+import com.babydatalog.app.utils.syncUuidFor
 import com.babydatalog.app.data.database.dao.FeedingDao
 import com.babydatalog.app.data.database.dao.GrowthDao
 import com.babydatalog.app.data.database.dao.MilestoneDao
@@ -24,7 +26,7 @@ import com.babydatalog.app.data.database.entity.NappyChange
         Milestone::class,
         GrowthMeasurement::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -93,6 +95,31 @@ abstract class BabyDataLogDatabase : RoomDatabase() {
                 for (table in tables) {
                     database.execSQL(
                         "ALTER TABLE `$table` ADD COLUMN `deletedAtMs` INTEGER"
+                    )
+                }
+            }
+        }
+
+        // Re-derive baby syncUuids from name+birthdate so the same baby
+        // entered independently on two phones produces the same UUID.
+        // No schema change — data-only migration.
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                val now = System.currentTimeMillis()
+                val cursor = database.query("SELECT id, name, birthDateMs FROM babies")
+                val updates = mutableListOf<Triple<Long, String, Long>>()
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(cursor.getColumnIndexOrThrow("id"))
+                    val name = cursor.getString(cursor.getColumnIndexOrThrow("name"))
+                    val birthDateMs = cursor.getLong(cursor.getColumnIndexOrThrow("birthDateMs"))
+                    val newUuid = syncUuidFor("b", name.trim().lowercase(), floorToDay(birthDateMs))
+                    updates.add(Triple(id, newUuid, now))
+                }
+                cursor.close()
+                for ((id, uuid, ts) in updates) {
+                    database.execSQL(
+                        "UPDATE babies SET syncUuid = ?, updatedAtMs = ? WHERE id = ?",
+                        arrayOf(uuid, ts, id)
                     )
                 }
             }

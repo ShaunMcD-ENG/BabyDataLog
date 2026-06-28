@@ -1,7 +1,27 @@
+import { createHash } from "crypto";
 import db from "./connection";
 
 // Schema mirrors the Android Room database exactly so sync diffs are trivial.
 // Column names and types match 1:1 with the Android entity definitions.
+
+// RFC 4122 v3 UUID from a UTF-8 string — identical algorithm to
+// Java's UUID.nameUUIDFromBytes so server and Android produce the same value.
+function nameUUIDFromString(input: string): string {
+  const hash = createHash("md5").update(Buffer.from(input, "utf8")).digest();
+  hash[6] = (hash[6] & 0x0f) | 0x30; // version 3
+  hash[8] = (hash[8] & 0x3f) | 0x80; // variant
+  const h = hash.toString("hex");
+  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
+}
+
+function floorToDay(ms: number): number {
+  return Math.floor(ms / 86_400_000) * 86_400_000;
+}
+
+function deriveBabySyncUuid(name: string, birthDateMs: number): string {
+  const key = `b:${name.trim().toLowerCase()}:${floorToDay(birthDateMs)}`;
+  return nameUUIDFromString(key);
+}
 
 export function runMigrations() {
   db.exec(`
@@ -142,6 +162,30 @@ export function runMigrations() {
     if (!cols.some((c) => c.name === "deletedAtMs")) {
       db.prepare(`ALTER TABLE ${table} ADD COLUMN deletedAtMs INTEGER`).run();
     }
+  }
+
+  // One-time migration: re-derive baby syncUuids from name+birthdate to match
+  // the Android deterministic UUID scheme introduced in DB v6.
+  // Tracked via settings so it only runs once even if the container restarts.
+  const migrationDone = db
+    .prepare("SELECT value FROM settings WHERE key = 'migration_baby_uuid_v1'")
+    .get();
+
+  if (!migrationDone) {
+    const babies = db
+      .prepare("SELECT id, name, birthDateMs, syncUuid FROM babies")
+      .all() as { id: number; name: string; birthDateMs: number; syncUuid: string }[];
+
+    const now = Date.now();
+    for (const baby of babies) {
+      const newUuid = deriveBabySyncUuid(baby.name, baby.birthDateMs);
+      if (newUuid !== baby.syncUuid) {
+        db.prepare("UPDATE babies SET syncUuid = ?, updatedAtMs = ? WHERE id = ?")
+          .run(newUuid, now, baby.id);
+      }
+    }
+
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_baby_uuid_v1', '1')").run();
   }
 
   // Index for efficient pull filtering — safe to run if already exists
