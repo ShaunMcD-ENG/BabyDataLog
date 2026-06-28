@@ -192,7 +192,10 @@ fun NavGraph(
                     babyUiState.selectedBaby?.id?.let { vm.setActiveBabyId(it) }
                 }
                 FeedingListScreen(
-                    onNavigateToAdd = { navController.navigate(Routes.FEEDING_ADD) },
+                    onNavigateToAdd = {
+                        if (babyUiState.selectedBaby != null) navController.navigate(Routes.FEEDING_ADD)
+                        else babyViewModel.startAddBaby()
+                    },
                     onNavigateToEdit = { id -> navController.navigate(Routes.feedingEdit(id)) }
                 )
             }
@@ -222,7 +225,10 @@ fun NavGraph(
                     babyUiState.selectedBaby?.id?.let { vm.setActiveBabyId(it) }
                 }
                 NappyListScreen(
-                    onNavigateToAdd = { navController.navigate(Routes.NAPPY_ADD) },
+                    onNavigateToAdd = {
+                        if (babyUiState.selectedBaby != null) navController.navigate(Routes.NAPPY_ADD)
+                        else babyViewModel.startAddBaby()
+                    },
                     onNavigateToEdit = { id -> navController.navigate(Routes.nappyEdit(id)) }
                 )
             }
@@ -252,7 +258,10 @@ fun NavGraph(
                     babyUiState.selectedBaby?.id?.let { vm.setActiveBabyId(it) }
                 }
                 MilestoneListScreen(
-                    onNavigateToAdd = { navController.navigate(Routes.MILESTONE_ADD) },
+                    onNavigateToAdd = {
+                        if (babyUiState.selectedBaby != null) navController.navigate(Routes.MILESTONE_ADD)
+                        else babyViewModel.startAddBaby()
+                    },
                     onNavigateToEdit = { id -> navController.navigate(Routes.milestoneEdit(id)) }
                 )
             }
@@ -282,7 +291,10 @@ fun NavGraph(
                     babyUiState.selectedBaby?.id?.let { vm.setActiveBabyId(it) }
                 }
                 GrowthListScreen(
-                    onNavigateToAdd = { navController.navigate(Routes.GROWTH_ADD) },
+                    onNavigateToAdd = {
+                        if (babyUiState.selectedBaby != null) navController.navigate(Routes.GROWTH_ADD)
+                        else babyViewModel.startAddBaby()
+                    },
                     onNavigateToEdit = { id -> navController.navigate(Routes.growthEdit(id)) }
                 )
             }

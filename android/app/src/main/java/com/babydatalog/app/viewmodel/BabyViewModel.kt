@@ -58,13 +58,6 @@ class BabyViewModel @Inject constructor(
                 }
             }
         }
-        viewModelScope.launch {
-            // Seed a default baby if the list is empty
-            if (_uiState.value.babies.isEmpty()) {
-                babyRepository.getOrCreateDefaultBaby()
-                // The getAllBabies() collector above will pick up the new baby
-            }
-        }
     }
 
     fun selectBaby(baby: Baby) {
