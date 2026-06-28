@@ -7,7 +7,8 @@ import com.babydatalog.app.data.database.dao.MilestoneDao
 import com.babydatalog.app.data.database.dao.NappyDao
 import com.babydatalog.app.data.database.entity.Baby
 import kotlinx.coroutines.flow.Flow
-import java.util.UUID
+import com.babydatalog.app.utils.floorToDay
+import com.babydatalog.app.utils.syncUuidFor
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -48,7 +49,7 @@ class BabyRepository @Inject constructor(
 
         val now = System.currentTimeMillis()
         val default = Baby(
-            syncUuid = UUID.randomUUID().toString(),
+            syncUuid = syncUuidFor("b", "baby", floorToDay(now)),
             name = "Baby",
             birthDateMs = now,
             birthWeightGrams = null,

@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.babydatalog.app.data.database.entity.Baby
 import com.babydatalog.app.data.repository.BabyRepository
+import com.babydatalog.app.utils.floorToDay
+import com.babydatalog.app.utils.syncUuidFor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -13,7 +15,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.UUID
 import javax.inject.Inject
 
 data class BabyUiState(
@@ -144,10 +145,11 @@ class BabyViewModel @Inject constructor(
                     _uiState.update { it.copy(selectedBaby = updated) }
                 } else {
                     val now = System.currentTimeMillis()
+                    val birthDateMs = state.newBabyBirthDateMs ?: now
                     val newBaby = Baby(
-                        syncUuid = UUID.randomUUID().toString(),
+                        syncUuid = syncUuidFor("b", state.newBabyName.trim().lowercase(), floorToDay(birthDateMs)),
                         name = state.newBabyName.trim(),
-                        birthDateMs = state.newBabyBirthDateMs ?: now,
+                        birthDateMs = birthDateMs,
                         birthWeightGrams = state.newBabyBirthWeightGrams,
                         createdAtMs = now
                     )

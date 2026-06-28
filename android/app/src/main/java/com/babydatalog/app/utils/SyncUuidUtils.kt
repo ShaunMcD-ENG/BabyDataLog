@@ -5,6 +5,9 @@ import java.util.UUID
 /** Floor a millisecond timestamp to the containing minute boundary. */
 fun floorToMinute(ms: Long): Long = ms / 60_000L * 60_000L
 
+/** Floor a millisecond timestamp to the containing day boundary (UTC). */
+fun floorToDay(ms: Long): Long = ms / 86_400_000L * 86_400_000L
+
 /**
  * Deterministic UUID derived from natural business-key parts.
  *
