@@ -176,14 +176,37 @@ export function runMigrations() {
       .prepare("SELECT id, name, birthDateMs, syncUuid FROM babies")
       .all() as { id: number; name: string; birthDateMs: number; syncUuid: string }[];
 
+    const CHILD_TABLES = [
+      "feeding_sessions", "nappy_changes", "milestones", "growth_measurements",
+    ] as const;
+
     const now = Date.now();
-    for (const baby of babies) {
-      const newUuid = deriveBabySyncUuid(baby.name, baby.birthDateMs);
-      if (newUuid !== baby.syncUuid) {
-        db.prepare("UPDATE babies SET syncUuid = ?, updatedAtMs = ? WHERE id = ?")
-          .run(newUuid, now, baby.id);
+
+    db.transaction(() => {
+      for (const baby of babies) {
+        const newUuid = deriveBabySyncUuid(baby.name, baby.birthDateMs);
+        if (newUuid === baby.syncUuid) continue;
+
+        // Check if another baby already claimed this derived UUID (duplicate entry
+        // e.g. same baby synced from two phones with different random UUIDs).
+        const survivor = db
+          .prepare("SELECT id FROM babies WHERE syncUuid = ? AND id != ?")
+          .get(newUuid, baby.id) as { id: number } | undefined;
+
+        if (survivor) {
+          // Merge: move child records onto the surviving baby, then soft-delete this one.
+          for (const t of CHILD_TABLES) {
+            db.prepare(`UPDATE OR IGNORE ${t} SET babyId = ? WHERE babyId = ?`)
+              .run(survivor.id, baby.id);
+          }
+          db.prepare("UPDATE babies SET deletedAtMs = ?, updatedAtMs = ? WHERE id = ?")
+            .run(now, now, baby.id);
+        } else {
+          db.prepare("UPDATE babies SET syncUuid = ?, updatedAtMs = ? WHERE id = ?")
+            .run(newUuid, now, baby.id);
+        }
       }
-    }
+    })();
 
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_baby_uuid_v1', '1')").run();
   }
