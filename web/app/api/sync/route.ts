@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthenticated, isValidApiKey } from "@/lib/auth";
+import { logger } from "@/lib/log";
 import db from "@/lib/db/connection";
 
 const SYNC_TABLES = [
@@ -25,17 +26,21 @@ interface SyncPush {
   records: SyncRecord[];
 }
 
-async function isAuthorized(req: NextRequest): Promise<boolean> {
+async function resolveDeviceId(req: NextRequest): Promise<string | null> {
   const authHeader = req.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
-    return isValidApiKey(authHeader.slice(7));
+    const key = authHeader.slice(7);
+    if (isValidApiKey(key)) return key.slice(0, 8);
   }
-  return isAuthenticated();
+  if (await isAuthenticated()) return "admin";
+  return null;
 }
 
 // POST /api/sync — Android pushes changes; last-write-wins on conflict
 export async function POST(req: NextRequest) {
-  if (!(await isAuthorized(req))) {
+  const caller = await resolveDeviceId(req);
+  if (!caller) {
+    logger.warn("SYNC_PUSH_UNAUTHORIZED");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -85,6 +90,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  logger.info("SYNC_PUSH", { deviceId, table, ...results });
   return NextResponse.json({ ok: true, ...results });
 }
 
@@ -92,7 +98,9 @@ export async function POST(req: NextRequest) {
 // Uses a 2-day lookback buffer so offline edits with slightly old timestamps are not missed.
 // On first sync (lastSyncMs=0) this returns everything.
 export async function GET(req: NextRequest) {
-  if (!(await isAuthorized(req))) {
+  const caller = await resolveDeviceId(req);
+  if (!caller) {
+    logger.warn("SYNC_PULL_UNAUTHORIZED");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -109,5 +117,9 @@ export async function GET(req: NextRequest) {
       .all(since);
   }
 
+  const counts = Object.fromEntries(
+    Object.entries(payload).map(([t, rows]) => [t, (rows as unknown[]).length])
+  );
+  logger.info("SYNC_PULL", { caller, lastSyncMs, since, counts });
   return NextResponse.json({ syncedAtMs: Date.now(), data: payload });
 }

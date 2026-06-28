@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { isSetupComplete, setAdminPassword, getSession } from "@/lib/auth";
+import { logger } from "@/lib/log";
 import SetupForm from "./SetupForm";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ async function setupAction(prevState: string, formData: FormData): Promise<strin
   const session = await getSession();
   session.authenticated = true;
   await session.save();
+  logger.info("SETUP_COMPLETE");
   redirect("/");
 }
 

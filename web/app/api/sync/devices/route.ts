@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
+import { logger } from "@/lib/log";
 import db from "@/lib/db/connection";
 
 // POST — Android registers a new device (no auth — device has no key yet)
@@ -18,6 +19,7 @@ export async function POST(req: NextRequest) {
     .get(deviceId) as { id: number; status: string } | undefined;
 
   if (existing) {
+    logger.info("DEVICE_RECONNECT", { deviceId, name, status: existing.status });
     return NextResponse.json({ ok: true, status: existing.status });
   }
 
@@ -25,6 +27,7 @@ export async function POST(req: NextRequest) {
     `INSERT INTO devices (deviceId, name, pairingCode, status, registeredAtMs) VALUES (?,?,?,?,?)`
   ).run(deviceId, name, pairingCode, "pending", Date.now());
 
+  logger.info("DEVICE_REGISTERED", { deviceId, name, pairingCode });
   return NextResponse.json({ ok: true, status: "pending" });
 }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
+import { logger } from "@/lib/log";
 import db from "@/lib/db/connection";
 
 type Device = {
@@ -31,9 +32,11 @@ export async function GET(
   }
 
   if (device.status === "approved" && pairingCode === device.pairingCode) {
+    logger.info("DEVICE_KEY_ISSUED", { deviceId, name: device.name });
     return NextResponse.json({ status: "approved", apiKey: device.apiKey });
   }
 
+  logger.info("DEVICE_POLLED", { deviceId, name: device.name, status: device.status });
   return NextResponse.json({ status: device.status });
 }
 
@@ -58,18 +61,19 @@ export async function PATCH(
   }
 
   if (action === "approve") {
-    // 64-char hex key (two UUIDs without dashes)
     const apiKey =
       crypto.randomUUID().replace(/-/g, "") +
       crypto.randomUUID().replace(/-/g, "");
     db.prepare(
       `UPDATE devices SET status = 'approved', apiKey = ?, approvedAtMs = ? WHERE deviceId = ?`
     ).run(apiKey, Date.now(), deviceId);
+    logger.info("DEVICE_APPROVED", { deviceId, name: device.name });
     return NextResponse.json({ ok: true });
   }
 
   if (action === "reject") {
     db.prepare("UPDATE devices SET status = 'rejected' WHERE deviceId = ?").run(deviceId);
+    logger.info("DEVICE_REJECTED", { deviceId, name: device.name });
     return NextResponse.json({ ok: true });
   }
 
