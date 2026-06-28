@@ -1,34 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useActionState } from "react";
 
-export default function SetupForm() {
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
+type SetupAction = (prevState: string, formData: FormData) => Promise<string>;
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (password !== confirm) { setError("Passwords don't match"); return; }
-    if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
-    setLoading(true);
-    setError("");
-    const res = await fetch("/api/auth/setup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    if (res.ok) {
-      router.push("/");
-    } else {
-      const data = await res.json();
-      setError(data.error ?? "Setup failed");
-      setLoading(false);
-    }
-  }
+export default function SetupForm({ setupAction }: { setupAction: SetupAction }) {
+  const [error, formAction, isPending] = useActionState(setupAction, "");
 
   return (
     <main style={pageStyle}>
@@ -39,13 +16,15 @@ export default function SetupForm() {
           Create an admin password to protect your sync server.
           You&apos;ll need this to log in and approve devices.
         </p>
-        <form onSubmit={handleSubmit}>
+        <form action={formAction}>
           <div style={{ marginBottom: 12 }}>
             <label style={labelStyle}>Admin Password</label>
             <input
-              type="password" value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required minLength={8} autoFocus
+              type="password"
+              name="password"
+              required
+              minLength={8}
+              autoFocus
               placeholder="Min. 8 characters"
               style={inputStyle}
             />
@@ -53,15 +32,16 @@ export default function SetupForm() {
           <div style={{ marginBottom: 20 }}>
             <label style={labelStyle}>Confirm Password</label>
             <input
-              type="password" value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              required placeholder="Repeat password"
+              type="password"
+              name="confirm"
+              required
+              placeholder="Repeat password"
               style={inputStyle}
             />
           </div>
           {error && <p style={{ color: "#c62828", fontSize: 13, marginBottom: 14 }}>{error}</p>}
-          <button type="submit" disabled={loading} style={btnStyle}>
-            {loading ? "Setting up…" : "Set Password & Continue →"}
+          <button type="submit" disabled={isPending} style={btnStyle}>
+            {isPending ? "Setting up…" : "Set Password & Continue →"}
           </button>
         </form>
       </div>
@@ -83,7 +63,7 @@ const labelStyle: React.CSSProperties = {
 };
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "10px 12px", border: "1px solid #d0d3d8",
-  borderRadius: 8, fontSize: 14, fontFamily: "inherit",
+  borderRadius: 8, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box",
 };
 const btnStyle: React.CSSProperties = {
   width: "100%", padding: "11px", background: "#4a90d9", color: "#fff",

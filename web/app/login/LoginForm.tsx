@@ -1,49 +1,29 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useActionState } from "react";
 
-export default function LoginForm() {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
+type LoginAction = (prevState: string, formData: FormData) => Promise<string>;
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    if (res.ok) {
-      router.push("/");
-    } else {
-      setError("Incorrect password");
-      setLoading(false);
-    }
-  }
+export default function LoginForm({ loginAction }: { loginAction: LoginAction }) {
+  const [error, formAction, isPending] = useActionState(loginAction, "");
 
   return (
     <main style={pageStyle}>
       <div style={boxStyle}>
         <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>BabyDataLog</h1>
         <p style={{ fontSize: 14, color: "#666", marginBottom: 28 }}>Sync Server · Admin Login</p>
-        <form onSubmit={handleSubmit}>
+        <form action={formAction}>
           <input
             type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            name="password"
             placeholder="Admin password"
             autoFocus
             required
             style={inputStyle}
           />
           {error && <p style={{ color: "#c62828", fontSize: 13, marginBottom: 12 }}>{error}</p>}
-          <button type="submit" disabled={loading} style={btnStyle}>
-            {loading ? "Checking…" : "Log in"}
+          <button type="submit" disabled={isPending} style={btnStyle}>
+            {isPending ? "Checking…" : "Log in"}
           </button>
         </form>
       </div>
@@ -62,6 +42,7 @@ const boxStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "10px 12px", border: "1px solid #d0d3d8",
   borderRadius: 8, fontSize: 15, marginBottom: 12, fontFamily: "inherit",
+  boxSizing: "border-box",
 };
 const btnStyle: React.CSSProperties = {
   width: "100%", padding: "11px", background: "#4a90d9", color: "#fff",
