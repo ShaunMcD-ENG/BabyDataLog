@@ -1,13 +1,18 @@
 package com.babydatalog.app.data.repository
 
+import com.babydatalog.app.data.database.dao.BabyDao
 import com.babydatalog.app.data.database.dao.GrowthDao
 import com.babydatalog.app.data.database.entity.GrowthMeasurement
-import java.util.UUID
+import com.babydatalog.app.utils.floorToMinute
+import com.babydatalog.app.utils.syncUuidFor
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class GrowthRepository @Inject constructor(private val growthDao: GrowthDao) {
+class GrowthRepository @Inject constructor(
+    private val growthDao: GrowthDao,
+    private val babyDao: BabyDao
+) {
 
     fun getMeasurementsForBaby(babyId: Long) = growthDao.getMeasurementsForBaby(babyId)
     fun getMeasurementById(id: Long) = growthDao.getMeasurementById(id)
@@ -18,12 +23,17 @@ class GrowthRepository @Inject constructor(private val growthDao: GrowthDao) {
     suspend fun upsertMeasurement(m: GrowthMeasurement) {
         val now = System.currentTimeMillis()
         if (m.id == 0L) {
-            growthDao.insertMeasurement(
-                m.copy(
-                    syncUuid = if (m.syncUuid.isBlank()) UUID.randomUUID().toString() else m.syncUuid,
-                    updatedAtMs = now
-                )
-            )
+            val syncUuid = if (m.syncUuid.isBlank()) {
+                val babySyncUuid = babyDao.getBabyByIdOnce(m.babyId)?.syncUuid
+                if (babySyncUuid != null) {
+                    syncUuidFor("g", babySyncUuid, floorToMinute(m.timestampMs))
+                } else {
+                    java.util.UUID.randomUUID().toString()
+                }
+            } else {
+                m.syncUuid
+            }
+            growthDao.insertMeasurement(m.copy(syncUuid = syncUuid, updatedAtMs = now))
         } else {
             growthDao.updateMeasurement(m.copy(updatedAtMs = now))
         }

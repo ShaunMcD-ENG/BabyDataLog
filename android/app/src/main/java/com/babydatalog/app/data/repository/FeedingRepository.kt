@@ -1,15 +1,18 @@
 package com.babydatalog.app.data.repository
 
+import com.babydatalog.app.data.database.dao.BabyDao
 import com.babydatalog.app.data.database.dao.FeedingDao
 import com.babydatalog.app.data.database.entity.FeedingSession
+import com.babydatalog.app.utils.floorToMinute
+import com.babydatalog.app.utils.syncUuidFor
 import kotlinx.coroutines.flow.Flow
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class FeedingRepository @Inject constructor(
-    private val feedingDao: FeedingDao
+    private val feedingDao: FeedingDao,
+    private val babyDao: BabyDao
 ) {
 
     fun getFeedingsForBaby(babyId: Long): Flow<List<FeedingSession>> =
@@ -39,12 +42,17 @@ class FeedingRepository @Inject constructor(
     suspend fun upsertFeeding(feeding: FeedingSession) {
         val now = System.currentTimeMillis()
         if (feeding.id == 0L) {
-            feedingDao.insertFeeding(
-                feeding.copy(
-                    syncUuid = if (feeding.syncUuid.isBlank()) UUID.randomUUID().toString() else feeding.syncUuid,
-                    updatedAtMs = now
-                )
-            )
+            val syncUuid = if (feeding.syncUuid.isBlank()) {
+                val babySyncUuid = babyDao.getBabyByIdOnce(feeding.babyId)?.syncUuid
+                if (babySyncUuid != null) {
+                    syncUuidFor("f", babySyncUuid, floorToMinute(feeding.startTimeMs))
+                } else {
+                    java.util.UUID.randomUUID().toString()
+                }
+            } else {
+                feeding.syncUuid
+            }
+            feedingDao.insertFeeding(feeding.copy(syncUuid = syncUuid, updatedAtMs = now))
         } else {
             feedingDao.updateFeeding(feeding.copy(updatedAtMs = now))
         }
