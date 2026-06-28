@@ -63,4 +63,7 @@ interface FeedingDao {
 
     @Query("SELECT * FROM feeding_sessions WHERE syncUuid = :uuid LIMIT 1")
     suspend fun getByUuid(uuid: String): FeedingSession?
+
+    @Query("DELETE FROM feeding_sessions")
+    suspend fun deleteAll()
 }

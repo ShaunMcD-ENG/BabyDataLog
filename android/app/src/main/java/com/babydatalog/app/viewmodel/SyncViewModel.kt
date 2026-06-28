@@ -132,6 +132,22 @@ class SyncViewModel @Inject constructor(
         }
     }
 
+    fun wipeAndResync() {
+        val current = _uiState.value as? SyncUiState.Connected ?: return
+        viewModelScope.launch {
+            _uiState.value = SyncUiState.Syncing(current.deviceName, current.serverUrl, current.lastSyncMs)
+            when (val result = repo.wipeAndResync()) {
+                is SyncResult.Success -> _uiState.value = SyncUiState.Connected(
+                    current.deviceName, current.serverUrl, prefs.lastSyncMs
+                )
+                is SyncResult.Error -> _uiState.value = SyncUiState.Connected(
+                    current.deviceName, current.serverUrl, 0L,
+                    syncError = result.message
+                )
+            }
+        }
+    }
+
     fun disconnect() {
         cancelAutoSync()
         repo.disconnect()

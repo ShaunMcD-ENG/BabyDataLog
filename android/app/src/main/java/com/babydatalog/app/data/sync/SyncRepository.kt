@@ -82,6 +82,16 @@ class SyncRepository @Inject constructor(
         return SyncResult.Success
     }
 
+    suspend fun wipeAndResync(): SyncResult {
+        babyDao.deleteAll()
+        feedingDao.deleteAll()
+        nappyDao.deleteAll()
+        milestoneDao.deleteAll()
+        growthDao.deleteAll()
+        prefs.lastSyncMs = 0L
+        return sync()
+    }
+
     fun disconnect() = prefs.clear()
 
     private suspend fun pushAll(serverUrl: String, apiKey: String, deviceId: String): String? {

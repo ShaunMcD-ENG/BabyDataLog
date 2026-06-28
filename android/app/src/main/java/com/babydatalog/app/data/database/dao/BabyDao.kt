@@ -39,4 +39,7 @@ interface BabyDao {
 
     @Query("SELECT * FROM babies WHERE syncUuid = :uuid LIMIT 1")
     suspend fun getByUuid(uuid: String): Baby?
+
+    @Query("DELETE FROM babies")
+    suspend fun deleteAll()
 }

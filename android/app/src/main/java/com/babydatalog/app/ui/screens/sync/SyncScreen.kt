@@ -17,7 +17,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,7 +70,7 @@ fun SyncScreen(viewModel: SyncViewModel = hiltViewModel()) {
         when (val state = uiState) {
             is SyncUiState.NotConfigured -> NotConfiguredContent(onConnect = viewModel::connect)
             is SyncUiState.Pending -> PendingContent(state = state, onCancel = viewModel::disconnect)
-            is SyncUiState.Connected -> ConnectedContent(state = state, onSync = viewModel::syncNow, onDisconnect = viewModel::disconnect)
+            is SyncUiState.Connected -> ConnectedContent(state = state, onSync = viewModel::syncNow, onWipeAndResync = viewModel::wipeAndResync, onDisconnect = viewModel::disconnect)
             is SyncUiState.Syncing -> SyncingContent(state = state)
             is SyncUiState.Error -> ErrorContent(state = state, onDismiss = viewModel::dismissError)
         }
@@ -182,8 +185,28 @@ private fun PendingContent(state: SyncUiState.Pending, onCancel: () -> Unit) {
 private fun ConnectedContent(
     state: SyncUiState.Connected,
     onSync: () -> Unit,
+    onWipeAndResync: () -> Unit,
     onDisconnect: () -> Unit
 ) {
+    var showWipeConfirm by remember { mutableStateOf(false) }
+
+    if (showWipeConfirm) {
+        AlertDialog(
+            onDismissRequest = { showWipeConfirm = false },
+            title = { Text("Wipe & Resync?") },
+            text = { Text("This will delete all local data on this device and re-download everything from the server. Any unsynced local changes will be lost.") },
+            confirmButton = {
+                Button(
+                    onClick = { showWipeConfirm = false; onWipeAndResync() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Wipe & Resync") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWipeConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     Spacer(Modifier.height(8.dp))
 
     Surface(
@@ -241,6 +264,14 @@ private fun ConnectedContent(
         Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
         Text("Sync Now")
+    }
+
+    OutlinedButton(
+        onClick = { showWipeConfirm = true },
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+    ) {
+        Text("Wipe Local & Resync")
     }
 
     OutlinedButton(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) {

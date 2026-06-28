@@ -65,4 +65,7 @@ interface NappyDao {
 
     @Query("SELECT * FROM nappy_changes WHERE syncUuid = :uuid LIMIT 1")
     suspend fun getByUuid(uuid: String): NappyChange?
+
+    @Query("DELETE FROM nappy_changes")
+    suspend fun deleteAll()
 }

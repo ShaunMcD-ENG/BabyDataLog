@@ -46,4 +46,7 @@ interface MilestoneDao {
 
     @Query("SELECT * FROM milestones WHERE syncUuid = :uuid LIMIT 1")
     suspend fun getByUuid(uuid: String): Milestone?
+
+    @Query("DELETE FROM milestones")
+    suspend fun deleteAll()
 }
