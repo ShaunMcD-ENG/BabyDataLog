@@ -45,34 +45,6 @@ async function removeDevice(formData: FormData) {
   redirect("/");
 }
 
-async function resolveConflict(formData: FormData) {
-  "use server";
-  if (!(await isAuthenticated())) redirect("/login");
-  const conflictId = Number(formData.get("conflictId"));
-  const resolution = formData.get("resolution") as "keep_server" | "keep_device";
-
-  const conflict = db
-    .prepare(`SELECT * FROM sync_conflicts WHERE id = ? AND resolvedAtMs IS NULL`)
-    .get(conflictId) as {
-      table_name: string; syncUuid: string;
-      serverJson: string; deviceJson: string;
-    } | undefined;
-
-  if (conflict && resolution === "keep_device") {
-    const record = JSON.parse(conflict.deviceJson);
-    const cols = Object.keys(record);
-    const assignments = cols.map((c) => `${c} = ?`).join(", ");
-    db.prepare(
-      `UPDATE ${conflict.table_name} SET ${assignments} WHERE syncUuid = ?`
-    ).run(...cols.map((c) => record[c]), record.syncUuid);
-  }
-
-  db.prepare(
-    `UPDATE sync_conflicts SET resolvedAtMs = ?, resolution = ? WHERE id = ?`
-  ).run(Date.now(), resolution, conflictId);
-  redirect("/");
-}
-
 async function logout() {
   "use server";
   const session = await getSession(await cookies());
@@ -91,11 +63,6 @@ type Device = {
 type LogEntry = {
   id: number; deviceId: string; table_name: string;
   action: string; syncedAtMs: number; deviceName: string | null;
-};
-
-type Conflict = {
-  id: number; table_name: string; syncUuid: string; deviceId: string;
-  serverJson: string; deviceJson: string; createdAtMs: number;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -124,12 +91,6 @@ export default async function DashboardPage() {
   const approved = devices.filter((d) => d.status === "approved");
   const rejected = devices.filter((d) => d.status === "rejected");
 
-  const conflicts = db
-    .prepare(
-      `SELECT * FROM sync_conflicts WHERE resolvedAtMs IS NULL ORDER BY createdAtMs DESC`
-    )
-    .all() as Conflict[];
-
   const recentLog = db
     .prepare(
       `SELECT sl.*, d.name AS deviceName
@@ -139,7 +100,6 @@ export default async function DashboardPage() {
     )
     .all() as LogEntry[];
 
-  // Last sync time per approved device
   const lastSync: Record<string, number | null> = {};
   for (const d of approved) {
     const row = db
@@ -238,52 +198,6 @@ export default async function DashboardPage() {
         )}
       </section>
 
-      {/* ── Conflicts ── */}
-      {conflicts.length > 0 && (
-        <section style={{ ...s.card, borderColor: "#f5c6c6", marginBottom: 20 }}>
-          <h2 style={{ ...s.heading, color: "#c62828" }}>
-            ⚠️ Sync Conflicts ({conflicts.length})
-          </h2>
-          <p style={{ fontSize: 13, color: "#666", margin: "4px 0 16px" }}>
-            The same record was edited on the server and on a device. Choose which version to keep.
-          </p>
-          {conflicts.map((c) => (
-            <div key={c.id} style={{ borderTop: "1px solid #f5c6c6", paddingTop: 16, marginTop: 16 }}>
-              <p style={{ fontSize: 12, color: "#888", marginBottom: 10 }}>
-                Table: <code style={{ background: "#f5f5f5", padding: "1px 5px", borderRadius: 3 }}>{c.table_name}</code>
-                {" · "}Device: {c.deviceId.slice(0, 8)}…
-                {" · "}{timeAgo(c.createdAtMs)}
-              </p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-                {[
-                  { label: "Server version", json: c.serverJson },
-                  { label: "Device version", json: c.deviceJson },
-                ].map(({ label, json }) => (
-                  <div key={label}>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 4 }}>{label}</p>
-                    <pre style={{ fontSize: 11, background: "#f8f8f8", padding: 10, borderRadius: 6, overflow: "auto", maxHeight: 160, lineHeight: 1.4 }}>
-                      {JSON.stringify(JSON.parse(json), null, 2)}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <form action={resolveConflict}>
-                  <input type="hidden" name="conflictId" value={c.id} />
-                  <input type="hidden" name="resolution" value="keep_server" />
-                  <button type="submit" style={s.btnBlue}>Keep Server</button>
-                </form>
-                <form action={resolveConflict}>
-                  <input type="hidden" name="conflictId" value={c.id} />
-                  <input type="hidden" name="resolution" value="keep_device" />
-                  <button type="submit" style={s.btnOrange}>Keep Device</button>
-                </form>
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
-
       {/* ── Rejected Devices ── */}
       {rejected.length > 0 && (
         <section style={{ ...s.card, marginBottom: 20 }}>
@@ -333,8 +247,8 @@ export default async function DashboardPage() {
                     <span style={{
                       display: "inline-block", padding: "2px 8px", borderRadius: 12,
                       fontSize: 11.5, fontWeight: 600,
-                      background: row.action === "push" ? "#e8f0fe" : row.action === "conflict" ? "#fdecea" : "#e6f4ea",
-                      color: row.action === "push" ? "#1a5cb4" : row.action === "conflict" ? "#c62828" : "#2e7d32",
+                      background: row.action === "updated" ? "#fff8e1" : "#e6f4ea",
+                      color: row.action === "updated" ? "#856404" : "#2e7d32",
                     }}>
                       {row.action}
                     </span>
@@ -375,8 +289,6 @@ const s = {
   td: { padding: "10px 12px", fontSize: 13.5, borderBottom: "1px solid #f0f0f0" } as React.CSSProperties,
   btnGhost: { ...base, background: "transparent", border: "1px solid #d0d3d8", color: "#555" } as React.CSSProperties,
   btnGreen: { ...base, background: "#2e7d32", color: "#fff" } as React.CSSProperties,
-  btnRed:   { ...base, background: "#c62828", color: "#fff" } as React.CSSProperties,
-  btnBlue:  { ...base, background: "#1a5cb4", color: "#fff" } as React.CSSProperties,
-  btnOrange:{ ...base, background: "#e07000", color: "#fff" } as React.CSSProperties,
+  btnRed: { ...base, background: "#c62828", color: "#fff" } as React.CSSProperties,
   btnSmallRed: { ...base, padding: "4px 10px", fontSize: 12, background: "#fdecea", color: "#c62828", border: "1px solid #f5c6c6" } as React.CSSProperties,
 };

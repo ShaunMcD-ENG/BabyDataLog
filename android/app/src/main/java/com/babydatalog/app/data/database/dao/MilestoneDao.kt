@@ -22,22 +22,25 @@ interface MilestoneDao {
     @Delete
     suspend fun deleteMilestone(milestone: Milestone)
 
-    @Query("SELECT * FROM milestones WHERE babyId = :babyId ORDER BY timestampMs DESC")
+    @Query("UPDATE milestones SET deletedAtMs = :now, updatedAtMs = :now WHERE babyId = :babyId AND deletedAtMs IS NULL")
+    suspend fun softDeleteAllForBaby(babyId: Long, now: Long)
+
+    @Query("SELECT * FROM milestones WHERE babyId = :babyId AND deletedAtMs IS NULL ORDER BY timestampMs DESC")
     fun getMilestonesForBaby(babyId: Long): Flow<List<Milestone>>
 
-    @Query("SELECT * FROM milestones WHERE id = :id")
+    @Query("SELECT * FROM milestones WHERE id = :id AND deletedAtMs IS NULL")
     fun getMilestoneById(id: Long): Flow<Milestone?>
 
-    @Query(
-        """
+    @Query("""
         SELECT * FROM milestones
         WHERE babyId = :babyId
           AND category = :category
+          AND deletedAtMs IS NULL
         ORDER BY timestampMs DESC
-        """
-    )
+    """)
     fun getMilestonesByCategory(babyId: Long, category: MilestoneCategory): Flow<List<Milestone>>
 
+    // Sync queries — include soft-deleted records so tombstones propagate to other devices
     @Query("SELECT * FROM milestones")
     suspend fun getAllForSync(): List<Milestone>
 

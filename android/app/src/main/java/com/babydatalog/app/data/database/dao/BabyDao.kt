@@ -18,22 +18,22 @@ interface BabyDao {
     @Update
     suspend fun updateBaby(baby: Baby)
 
-    @Query("SELECT * FROM babies ORDER BY createdAtMs ASC")
+    @Delete
+    suspend fun deleteBaby(baby: Baby)
+
+    @Query("SELECT * FROM babies WHERE deletedAtMs IS NULL ORDER BY createdAtMs ASC")
     fun getAllBabies(): Flow<List<Baby>>
 
-    @Query("SELECT * FROM babies WHERE id = :id")
+    @Query("SELECT * FROM babies WHERE id = :id AND deletedAtMs IS NULL")
     fun getBabyById(id: Long): Flow<Baby?>
 
     @Query("SELECT * FROM babies WHERE id = :id")
     suspend fun getBabyByIdOnce(id: Long): Baby?
 
-    @Delete
-    suspend fun deleteBaby(baby: Baby)
-
-    /** One-shot query — returns the first baby inserted (lowest id), or null if the table is empty. */
-    @Query("SELECT * FROM babies ORDER BY id ASC LIMIT 1")
+    @Query("SELECT * FROM babies WHERE deletedAtMs IS NULL ORDER BY id ASC LIMIT 1")
     suspend fun getFirstBabyOnce(): Baby?
 
+    // Sync queries — include soft-deleted records so tombstones propagate to other devices
     @Query("SELECT * FROM babies")
     suspend fun getAllForSync(): List<Baby>
 

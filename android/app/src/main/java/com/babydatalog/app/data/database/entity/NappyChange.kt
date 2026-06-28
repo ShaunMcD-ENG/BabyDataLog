@@ -31,5 +31,6 @@ data class NappyChange(
     val pooColour: PooColour?,
     val notes: String?,
     val createdAtMs: Long,
-    val updatedAtMs: Long = System.currentTimeMillis()
+    val updatedAtMs: Long = System.currentTimeMillis(),
+    val deletedAtMs: Long? = null
 )

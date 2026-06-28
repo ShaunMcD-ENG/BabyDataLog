@@ -31,6 +31,8 @@ class SyncRepository @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    val isConnected: Boolean get() = prefs.apiKey != null
+
     suspend fun registerDevice(serverUrl: String, deviceName: String): SyncResult {
         val deviceId = UUID.randomUUID().toString()
         val pairingCode = generatePairingCode()

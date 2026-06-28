@@ -29,5 +29,6 @@ data class Milestone(
     val category: MilestoneCategory,
     val photoUri: String?,
     val createdAtMs: Long,
-    val updatedAtMs: Long = System.currentTimeMillis()
+    val updatedAtMs: Long = System.currentTimeMillis(),
+    val deletedAtMs: Long? = null
 )

@@ -1,6 +1,10 @@
 package com.babydatalog.app.data.repository
 
 import com.babydatalog.app.data.database.dao.BabyDao
+import com.babydatalog.app.data.database.dao.FeedingDao
+import com.babydatalog.app.data.database.dao.GrowthDao
+import com.babydatalog.app.data.database.dao.MilestoneDao
+import com.babydatalog.app.data.database.dao.NappyDao
 import com.babydatalog.app.data.database.entity.Baby
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
@@ -9,7 +13,11 @@ import javax.inject.Singleton
 
 @Singleton
 class BabyRepository @Inject constructor(
-    private val babyDao: BabyDao
+    private val babyDao: BabyDao,
+    private val feedingDao: FeedingDao,
+    private val nappyDao: NappyDao,
+    private val milestoneDao: MilestoneDao,
+    private val growthDao: GrowthDao
 ) {
 
     fun getAllBabies(): Flow<List<Baby>> = babyDao.getAllBabies()
@@ -24,7 +32,15 @@ class BabyRepository @Inject constructor(
     suspend fun updateBaby(baby: Baby) =
         babyDao.updateBaby(baby.copy(updatedAtMs = System.currentTimeMillis()))
 
-    suspend fun deleteBaby(baby: Baby) = babyDao.deleteBaby(baby)
+    suspend fun deleteBaby(baby: Baby) {
+        val now = System.currentTimeMillis()
+        // Cascade soft-delete all child records first so their tombstones sync independently
+        feedingDao.softDeleteAllForBaby(baby.id, now)
+        nappyDao.softDeleteAllForBaby(baby.id, now)
+        milestoneDao.softDeleteAllForBaby(baby.id, now)
+        growthDao.softDeleteAllForBaby(baby.id, now)
+        babyDao.updateBaby(baby.copy(deletedAtMs = now, updatedAtMs = now))
+    }
 
     suspend fun getOrCreateDefaultBaby(): Baby {
         val existing = babyDao.getFirstBabyOnce()

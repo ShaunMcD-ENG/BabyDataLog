@@ -31,11 +31,7 @@ data class PollResponse(val status: String, val apiKey: String? = null)
 data class SyncPushRequest(val deviceId: String, val table: String, val records: JsonArray)
 
 @Serializable
-data class SyncPullResponse(
-    val syncedAtMs: Long,
-    val data: JsonObject,
-    val pendingConflicts: JsonArray = JsonArray(emptyList())
-)
+data class SyncPullResponse(val syncedAtMs: Long, val data: JsonObject)
 
 // --- Per-table serializable DTOs (enums as strings for JSON) ---
 
@@ -43,7 +39,8 @@ data class SyncPullResponse(
 data class SyncBaby(
     val id: Long, val syncUuid: String, val name: String,
     val birthDateMs: Long, val birthWeightGrams: Int?,
-    val createdAtMs: Long, val updatedAtMs: Long
+    val createdAtMs: Long, val updatedAtMs: Long,
+    val deletedAtMs: Long? = null
 )
 
 @Serializable
@@ -51,7 +48,8 @@ data class SyncFeeding(
     val id: Long, val syncUuid: String, val babyId: Long,
     val startTimeMs: Long, val endTimeMs: Long?, val durationMinutes: Float?,
     val breastSide: String, val babyState: String?, val latchQuality: String?,
-    val notes: String?, val createdAtMs: Long, val updatedAtMs: Long
+    val notes: String?, val createdAtMs: Long, val updatedAtMs: Long,
+    val deletedAtMs: Long? = null
 )
 
 @Serializable
@@ -59,7 +57,8 @@ data class SyncNappy(
     val id: Long, val syncUuid: String, val babyId: Long,
     val timestampMs: Long, val type: String, val amount: String,
     val pooColour: String?, val notes: String?,
-    val createdAtMs: Long, val updatedAtMs: Long
+    val createdAtMs: Long, val updatedAtMs: Long,
+    val deletedAtMs: Long? = null
 )
 
 @Serializable
@@ -67,7 +66,8 @@ data class SyncMilestone(
     val id: Long, val syncUuid: String, val babyId: Long,
     val timestampMs: Long, val title: String, val description: String?,
     val category: String, val photoUri: String?,
-    val createdAtMs: Long, val updatedAtMs: Long
+    val createdAtMs: Long, val updatedAtMs: Long,
+    val deletedAtMs: Long? = null
 )
 
 @Serializable
@@ -76,44 +76,45 @@ data class SyncGrowth(
     val timestampMs: Long, val weightGrams: Int?, val heightCm: Float?,
     val headCircumferenceCm: Float?, val footSizeMm: Int?, val handSizeMm: Int?,
     val legLengthCm: Float?, val armLengthCm: Float?, val backLengthCm: Float?,
-    val notes: String?, val createdAtMs: Long, val updatedAtMs: Long
+    val notes: String?, val createdAtMs: Long, val updatedAtMs: Long,
+    val deletedAtMs: Long? = null
 )
 
 // --- Entity → DTO ---
 
-fun Baby.toSync() = SyncBaby(id, syncUuid, name, birthDateMs, birthWeightGrams, createdAtMs, updatedAtMs)
+fun Baby.toSync() = SyncBaby(id, syncUuid, name, birthDateMs, birthWeightGrams, createdAtMs, updatedAtMs, deletedAtMs)
 
 fun FeedingSession.toSync() = SyncFeeding(
     id, syncUuid, babyId, startTimeMs, endTimeMs, durationMinutes,
-    breastSide.name, babyState?.name, latchQuality?.name, notes, createdAtMs, updatedAtMs
+    breastSide.name, babyState?.name, latchQuality?.name, notes, createdAtMs, updatedAtMs, deletedAtMs
 )
 
 fun NappyChange.toSync() = SyncNappy(
     id, syncUuid, babyId, timestampMs, type.name, amount.name,
-    pooColour?.name, notes, createdAtMs, updatedAtMs
+    pooColour?.name, notes, createdAtMs, updatedAtMs, deletedAtMs
 )
 
 fun Milestone.toSync() = SyncMilestone(
     id, syncUuid, babyId, timestampMs, title, description,
-    category.name, photoUri, createdAtMs, updatedAtMs
+    category.name, photoUri, createdAtMs, updatedAtMs, deletedAtMs
 )
 
 fun GrowthMeasurement.toSync() = SyncGrowth(
     id, syncUuid, babyId, timestampMs, weightGrams, heightCm, headCircumferenceCm,
-    footSizeMm, handSizeMm, legLengthCm, armLengthCm, backLengthCm, notes, createdAtMs, updatedAtMs
+    footSizeMm, handSizeMm, legLengthCm, armLengthCm, backLengthCm, notes, createdAtMs, updatedAtMs, deletedAtMs
 )
 
 // --- DTO → Entity ---
 
 fun SyncBaby.toEntity() =
-    Baby(id, syncUuid, name, birthDateMs, birthWeightGrams, createdAtMs, updatedAtMs)
+    Baby(id, syncUuid, name, birthDateMs, birthWeightGrams, createdAtMs, updatedAtMs, deletedAtMs)
 
 fun SyncFeeding.toEntity() = FeedingSession(
     id, syncUuid, babyId, startTimeMs, endTimeMs, durationMinutes,
     BreastSide.valueOf(breastSide),
     babyState?.let { BabyState.valueOf(it) },
     latchQuality?.let { LatchQuality.valueOf(it) },
-    notes, createdAtMs, updatedAtMs
+    notes, createdAtMs, updatedAtMs, deletedAtMs
 )
 
 fun SyncNappy.toEntity() = NappyChange(
@@ -121,16 +122,16 @@ fun SyncNappy.toEntity() = NappyChange(
     NappyType.valueOf(type),
     NappyAmount.valueOf(amount),
     pooColour?.let { PooColour.valueOf(it) },
-    notes, createdAtMs, updatedAtMs
+    notes, createdAtMs, updatedAtMs, deletedAtMs
 )
 
 fun SyncMilestone.toEntity() = Milestone(
     id, syncUuid, babyId, timestampMs, title, description,
     MilestoneCategory.valueOf(category),
-    photoUri, createdAtMs, updatedAtMs
+    photoUri, createdAtMs, updatedAtMs, deletedAtMs
 )
 
 fun SyncGrowth.toEntity() = GrowthMeasurement(
     id, syncUuid, babyId, timestampMs, weightGrams, heightCm, headCircumferenceCm,
-    footSizeMm, handSizeMm, legLengthCm, armLengthCm, backLengthCm, notes, createdAtMs, updatedAtMs
+    footSizeMm, handSizeMm, legLengthCm, armLengthCm, backLengthCm, notes, createdAtMs, updatedAtMs, deletedAtMs
 )

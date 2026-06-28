@@ -38,8 +38,10 @@ class NappyRepository @Inject constructor(
     suspend fun updateNappy(nappy: NappyChange) =
         nappyDao.updateNappy(nappy.copy(updatedAtMs = System.currentTimeMillis()))
 
-    suspend fun deleteNappy(nappy: NappyChange) =
-        nappyDao.deleteNappy(nappy)
+    suspend fun deleteNappy(nappy: NappyChange) {
+        val now = System.currentTimeMillis()
+        nappyDao.updateNappy(nappy.copy(deletedAtMs = now, updatedAtMs = now))
+    }
 
     suspend fun upsertNappy(nappy: NappyChange) {
         val now = System.currentTimeMillis()

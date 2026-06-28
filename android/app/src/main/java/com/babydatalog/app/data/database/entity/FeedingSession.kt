@@ -33,5 +33,6 @@ data class FeedingSession(
     val latchQuality: LatchQuality?,
     val notes: String?,
     val createdAtMs: Long,
-    val updatedAtMs: Long = System.currentTimeMillis()
+    val updatedAtMs: Long = System.currentTimeMillis(),
+    val deletedAtMs: Long? = null
 )

@@ -39,5 +39,8 @@ class GrowthRepository @Inject constructor(
         }
     }
 
-    suspend fun deleteMeasurement(m: GrowthMeasurement) = growthDao.deleteMeasurement(m)
+    suspend fun deleteMeasurement(m: GrowthMeasurement) {
+        val now = System.currentTimeMillis()
+        growthDao.updateMeasurement(m.copy(deletedAtMs = now, updatedAtMs = now))
+    }
 }

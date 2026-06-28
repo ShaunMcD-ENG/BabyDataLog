@@ -12,7 +12,8 @@ export function runMigrations() {
       birthDateMs      INTEGER NOT NULL,
       birthWeightGrams INTEGER,
       createdAtMs      INTEGER NOT NULL,
-      updatedAtMs      INTEGER NOT NULL DEFAULT 0
+      updatedAtMs      INTEGER NOT NULL DEFAULT 0,
+      deletedAtMs      INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS feeding_sessions (
@@ -27,7 +28,8 @@ export function runMigrations() {
       latchQuality    TEXT,
       notes           TEXT,
       createdAtMs     INTEGER NOT NULL,
-      updatedAtMs     INTEGER NOT NULL DEFAULT 0
+      updatedAtMs     INTEGER NOT NULL DEFAULT 0,
+      deletedAtMs     INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS nappy_changes (
@@ -40,7 +42,8 @@ export function runMigrations() {
       pooColour   TEXT,
       notes       TEXT,
       createdAtMs INTEGER NOT NULL,
-      updatedAtMs INTEGER NOT NULL DEFAULT 0
+      updatedAtMs INTEGER NOT NULL DEFAULT 0,
+      deletedAtMs INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS milestones (
@@ -53,7 +56,8 @@ export function runMigrations() {
       category    TEXT    NOT NULL,
       photoUri    TEXT,
       createdAtMs INTEGER NOT NULL,
-      updatedAtMs INTEGER NOT NULL DEFAULT 0
+      updatedAtMs INTEGER NOT NULL DEFAULT 0,
+      deletedAtMs INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS growth_measurements (
@@ -71,7 +75,8 @@ export function runMigrations() {
       backLengthCm         REAL,
       notes                TEXT,
       createdAtMs          INTEGER NOT NULL,
-      updatedAtMs          INTEGER NOT NULL DEFAULT 0
+      updatedAtMs          INTEGER NOT NULL DEFAULT 0,
+      deletedAtMs          INTEGER
     );
 
     -- Sync tracking
@@ -132,8 +137,10 @@ export function runMigrations() {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === "updatedAtMs")) {
       db.prepare(`ALTER TABLE ${table} ADD COLUMN updatedAtMs INTEGER NOT NULL DEFAULT 0`).run();
-      // Seed existing rows so they are visible to pull filtering immediately
       db.prepare(`UPDATE ${table} SET updatedAtMs = createdAtMs`).run();
+    }
+    if (!cols.some((c) => c.name === "deletedAtMs")) {
+      db.prepare(`ALTER TABLE ${table} ADD COLUMN deletedAtMs INTEGER`).run();
     }
   }
 

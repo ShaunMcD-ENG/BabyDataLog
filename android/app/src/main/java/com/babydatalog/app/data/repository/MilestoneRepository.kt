@@ -31,8 +31,10 @@ class MilestoneRepository @Inject constructor(
     suspend fun updateMilestone(milestone: Milestone) =
         milestoneDao.updateMilestone(milestone.copy(updatedAtMs = System.currentTimeMillis()))
 
-    suspend fun deleteMilestone(milestone: Milestone) =
-        milestoneDao.deleteMilestone(milestone)
+    suspend fun deleteMilestone(milestone: Milestone) {
+        val now = System.currentTimeMillis()
+        milestoneDao.updateMilestone(milestone.copy(deletedAtMs = now, updatedAtMs = now))
+    }
 
     suspend fun upsertMilestone(milestone: Milestone) {
         val now = System.currentTimeMillis()

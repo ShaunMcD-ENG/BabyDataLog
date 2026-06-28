@@ -22,44 +22,44 @@ interface NappyDao {
     @Delete
     suspend fun deleteNappy(nappy: NappyChange)
 
-    @Query("SELECT * FROM nappy_changes WHERE babyId = :babyId ORDER BY timestampMs DESC")
+    @Query("UPDATE nappy_changes SET deletedAtMs = :now, updatedAtMs = :now WHERE babyId = :babyId AND deletedAtMs IS NULL")
+    suspend fun softDeleteAllForBaby(babyId: Long, now: Long)
+
+    @Query("SELECT * FROM nappy_changes WHERE babyId = :babyId AND deletedAtMs IS NULL ORDER BY timestampMs DESC")
     fun getNappiesForBaby(babyId: Long): Flow<List<NappyChange>>
 
-    @Query("SELECT * FROM nappy_changes WHERE id = :id")
+    @Query("SELECT * FROM nappy_changes WHERE id = :id AND deletedAtMs IS NULL")
     fun getNappyById(id: Long): Flow<NappyChange?>
 
-    @Query(
-        """
+    @Query("""
         SELECT * FROM nappy_changes
         WHERE babyId = :babyId
           AND timestampMs >= :startMs
           AND timestampMs <= :endMs
+          AND deletedAtMs IS NULL
         ORDER BY timestampMs DESC
-        """
-    )
+    """)
     fun getNappiesInRange(babyId: Long, startMs: Long, endMs: Long): Flow<List<NappyChange>>
 
-    @Query(
-        """
+    @Query("""
         SELECT * FROM nappy_changes
-        WHERE babyId = :babyId
+        WHERE babyId = :babyId AND deletedAtMs IS NULL
         ORDER BY timestampMs DESC
         LIMIT 1
-        """
-    )
+    """)
     fun getLastNappy(babyId: Long): Flow<NappyChange?>
 
-    @Query(
-        """
+    @Query("""
         SELECT COUNT(*) FROM nappy_changes
         WHERE babyId = :babyId
           AND timestampMs >= :startMs
           AND timestampMs < :endMs
           AND type = :type
-        """
-    )
+          AND deletedAtMs IS NULL
+    """)
     fun getNappyCountByType(babyId: Long, startMs: Long, endMs: Long, type: NappyType): Flow<Int>
 
+    // Sync queries — include soft-deleted records so tombstones propagate to other devices
     @Query("SELECT * FROM nappy_changes")
     suspend fun getAllForSync(): List<NappyChange>
 

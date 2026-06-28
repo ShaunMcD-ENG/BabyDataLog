@@ -1,17 +1,26 @@
 package com.babydatalog.app.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.babydatalog.app.data.sync.PollResponse
 import com.babydatalog.app.data.sync.SyncPreferences
 import com.babydatalog.app.data.sync.SyncRepository
 import com.babydatalog.app.data.sync.SyncResult
+import com.babydatalog.app.data.sync.SyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 sealed class SyncUiState {
@@ -38,7 +47,8 @@ sealed class SyncUiState {
 @HiltViewModel
 class SyncViewModel @Inject constructor(
     private val repo: SyncRepository,
-    private val prefs: SyncPreferences
+    private val prefs: SyncPreferences,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<SyncUiState>(SyncUiState.NotConfigured)
@@ -52,8 +62,10 @@ class SyncViewModel @Inject constructor(
 
         when {
             serverUrl == null -> _uiState.value = SyncUiState.NotConfigured
-            apiKey != null -> _uiState.value =
-                SyncUiState.Connected(deviceName, serverUrl, prefs.lastSyncMs)
+            apiKey != null -> {
+                _uiState.value = SyncUiState.Connected(deviceName, serverUrl, prefs.lastSyncMs)
+                scheduleAutoSync()
+            }
             pairingCode != null -> {
                 _uiState.value = SyncUiState.Pending(pairingCode, deviceName, serverUrl)
                 startPolling()
@@ -88,6 +100,7 @@ class SyncViewModel @Inject constructor(
                             prefs.serverUrl ?: "",
                             prefs.lastSyncMs
                         )
+                        scheduleAutoSync()
                         break
                     }
                     "rejected" -> {
@@ -120,11 +133,35 @@ class SyncViewModel @Inject constructor(
     }
 
     fun disconnect() {
+        cancelAutoSync()
         repo.disconnect()
         _uiState.value = SyncUiState.NotConfigured
     }
 
     fun dismissError() {
         _uiState.value = SyncUiState.NotConfigured
+    }
+
+    private fun scheduleAutoSync() {
+        val request = PeriodicWorkRequestBuilder<SyncWorker>(30, TimeUnit.MINUTES)
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            SYNC_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+    }
+
+    private fun cancelAutoSync() {
+        WorkManager.getInstance(context).cancelUniqueWork(SYNC_WORK_NAME)
+    }
+
+    companion object {
+        private const val SYNC_WORK_NAME = "babydatalog_auto_sync"
     }
 }

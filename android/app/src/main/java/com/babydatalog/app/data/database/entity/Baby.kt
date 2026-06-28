@@ -11,5 +11,6 @@ data class Baby(
     val birthDateMs: Long,
     val birthWeightGrams: Int?,
     val createdAtMs: Long,
-    val updatedAtMs: Long = System.currentTimeMillis()
+    val updatedAtMs: Long = System.currentTimeMillis(),
+    val deletedAtMs: Long? = null
 )

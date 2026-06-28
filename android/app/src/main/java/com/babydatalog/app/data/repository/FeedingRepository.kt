@@ -36,8 +36,10 @@ class FeedingRepository @Inject constructor(
     suspend fun updateFeeding(feeding: FeedingSession) =
         feedingDao.updateFeeding(feeding.copy(updatedAtMs = System.currentTimeMillis()))
 
-    suspend fun deleteFeeding(feeding: FeedingSession) =
-        feedingDao.deleteFeeding(feeding)
+    suspend fun deleteFeeding(feeding: FeedingSession) {
+        val now = System.currentTimeMillis()
+        feedingDao.updateFeeding(feeding.copy(deletedAtMs = now, updatedAtMs = now))
+    }
 
     suspend fun upsertFeeding(feeding: FeedingSession) {
         val now = System.currentTimeMillis()
