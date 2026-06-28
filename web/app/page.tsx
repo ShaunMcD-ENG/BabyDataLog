@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { isAuthenticated, isSetupComplete, getSession } from "@/lib/auth";
 import { cookies } from "next/headers";
 import db from "@/lib/db/connection";
+import ClearDatabaseButton from "./ClearDatabaseButton";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,22 @@ async function logout() {
   const session = await getSession(await cookies());
   session.destroy();
   redirect("/login");
+}
+
+async function clearDatabase() {
+  "use server";
+  if (!(await isAuthenticated())) redirect("/login");
+  db.exec(`
+    DELETE FROM growth_measurements;
+    DELETE FROM milestones;
+    DELETE FROM nappy_changes;
+    DELETE FROM feeding_sessions;
+    DELETE FROM babies;
+    DELETE FROM sync_log;
+    DELETE FROM sync_conflicts;
+    DELETE FROM devices;
+  `);
+  redirect("/");
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -220,7 +237,7 @@ export default async function DashboardPage() {
       )}
 
       {/* ── Recent Activity ── */}
-      <section style={s.card}>
+      <section style={{ ...s.card, marginBottom: 20 }}>
         <h2 style={s.heading}>📋 Recent Sync Activity</h2>
         {recentLog.length === 0 ? (
           <p style={{ fontSize: 14, color: "#888", marginTop: 8 }}>No sync activity yet.</p>
@@ -260,6 +277,15 @@ export default async function DashboardPage() {
             </tbody>
           </table>
         )}
+      </section>
+      {/* ── Danger Zone ── */}
+      <section style={{ ...s.card, borderColor: "#f5c6c6" }}>
+        <h2 style={{ ...s.heading, color: "#c62828" }}>⚠️ Danger Zone</h2>
+        <p style={{ fontSize: 13, color: "#666", margin: "8px 0 16px" }}>
+          Permanently deletes all baby data, sync history, and disconnects all devices.
+          The admin password is kept. Phones will need to re-pair.
+        </p>
+        <ClearDatabaseButton clearAction={clearDatabase} />
       </section>
     </main>
   );
