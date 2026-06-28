@@ -12,7 +12,7 @@ const SESSION_OPTIONS = {
   password: process.env.SESSION_SECRET ?? "dev-secret-replace-in-production-32chars",
   cookieName: "babydatalog-session",
   cookieOptions: {
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.SECURE_COOKIES === "true",
     httpOnly: true,
     maxAge: 60 * 60 * 24 * 7, // 7 days
   },
