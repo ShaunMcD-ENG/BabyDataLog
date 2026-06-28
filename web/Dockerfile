@@ -4,7 +4,7 @@ WORKDIR /app
 FROM base AS deps
 RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm install
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
