@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Allow plain HTTP to private/local network addresses only.
+         Production internet traffic still requires HTTPS. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- 10.x.x.x -->
+        <domain includeSubdomains="true">10.0.0.0</domain>
+        <!-- 192.168.x.x -->
+        <domain includeSubdomains="true">192.168.0.0</domain>
+        <!-- 172.16–31.x.x -->
+        <domain includeSubdomains="true">172.16.0.0</domain>
+        <!-- localhost -->
+        <domain includeSubdomains="true">localhost</domain>
+    </domain-config>
+</network-security-config>
