@@ -22,12 +22,17 @@ export async function getSession(cookieStore?: ReadonlyRequestCookies) {
   return getIronSession<SessionData>(cookieStore ?? (await cookies()), SESSION_OPTIONS);
 }
 
-// Returns true if an admin password has been set in the DB
+// Returns true if an admin password has been set in the DB.
+// Catches SqliteError during Next.js static build when tables don't exist yet.
 export function isSetupComplete(): boolean {
-  const row = db
-    .prepare("SELECT value FROM settings WHERE key = 'admin_password_hash'")
-    .get() as { value: string } | undefined;
-  return !!row;
+  try {
+    const row = db
+      .prepare("SELECT value FROM settings WHERE key = 'admin_password_hash'")
+      .get() as { value: string } | undefined;
+    return !!row;
+  } catch {
+    return false;
+  }
 }
 
 export async function verifyAdminPassword(input: string): Promise<boolean> {
