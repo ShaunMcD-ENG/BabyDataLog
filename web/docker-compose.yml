@@ -9,7 +9,6 @@ services:
     environment:
       - DATABASE_PATH=/data/babydatalog.db
       - SESSION_SECRET=${SESSION_SECRET}
-      - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
 
 volumes:
   babydatalog-data:
