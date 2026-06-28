@@ -3,6 +3,8 @@ import { isAuthenticated, isSetupComplete, getSession } from "@/lib/auth";
 import { cookies } from "next/headers";
 import db from "@/lib/db/connection";
 
+export const dynamic = "force-dynamic";
+
 // ── Server Actions ─────────────────────────────────────────────────────────
 
 async function approveDevice(formData: FormData) {
