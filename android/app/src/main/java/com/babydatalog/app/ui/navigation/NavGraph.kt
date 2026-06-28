@@ -141,6 +141,9 @@ fun NavGraph(
     val currentRoute = navBackStackEntry?.destination?.route
     val showBottomBar = currentRoute in bottomBarRoutes
 
+    // Routes that are actual tab roots — sub-screens like Settings are excluded
+    val tabRootRoutes = bottomNavItems.map { it.route }.toSet()
+
     Scaffold(
         modifier = modifier,
         bottomBar = {
@@ -155,7 +158,9 @@ fun NavGraph(
                             onClick = {
                                 navController.navigate(item.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
+                                        // Don't save state when leaving a sub-screen (e.g. Settings),
+                                        // so it doesn't get restored when returning to the Home tab.
+                                        saveState = currentRoute in tabRootRoutes
                                     }
                                     launchSingleTop = true
                                     restoreState = true
@@ -326,7 +331,7 @@ fun NavGraph(
                 SummaryScreen()
             }
             composable(Routes.SETTINGS) {
-                SettingsScreen()
+                SettingsScreen(onNavigateBack = { navController.popBackStack() })
             }
             composable(Routes.SYNC) {
                 SyncScreen()
