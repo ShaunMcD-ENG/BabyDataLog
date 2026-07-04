@@ -1,26 +1,18 @@
 package com.babydatalog.app.viewmodel
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import com.babydatalog.app.data.sync.PollResponse
 import com.babydatalog.app.data.sync.SyncPreferences
 import com.babydatalog.app.data.sync.SyncRepository
 import com.babydatalog.app.data.sync.SyncResult
-import com.babydatalog.app.data.sync.SyncWorker
+import com.babydatalog.app.data.sync.SyncScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 sealed class SyncUiState {
@@ -48,7 +40,7 @@ sealed class SyncUiState {
 class SyncViewModel @Inject constructor(
     private val repo: SyncRepository,
     private val prefs: SyncPreferences,
-    @ApplicationContext private val context: Context
+    private val scheduler: SyncScheduler
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<SyncUiState>(SyncUiState.NotConfigured)
@@ -158,26 +150,7 @@ class SyncViewModel @Inject constructor(
         _uiState.value = SyncUiState.NotConfigured
     }
 
-    private fun scheduleAutoSync() {
-        val request = PeriodicWorkRequestBuilder<SyncWorker>(30, TimeUnit.MINUTES)
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-            )
-            .build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            SYNC_WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
-            request
-        )
-    }
+    private fun scheduleAutoSync() = scheduler.schedulePeriodic()
 
-    private fun cancelAutoSync() {
-        WorkManager.getInstance(context).cancelUniqueWork(SYNC_WORK_NAME)
-    }
-
-    companion object {
-        private const val SYNC_WORK_NAME = "babydatalog_auto_sync"
-    }
+    private fun cancelAutoSync() = scheduler.cancelAll()
 }

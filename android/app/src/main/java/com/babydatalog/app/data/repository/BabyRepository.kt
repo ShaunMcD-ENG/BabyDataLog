@@ -6,6 +6,7 @@ import com.babydatalog.app.data.database.dao.GrowthDao
 import com.babydatalog.app.data.database.dao.MilestoneDao
 import com.babydatalog.app.data.database.dao.NappyDao
 import com.babydatalog.app.data.database.entity.Baby
+import com.babydatalog.app.data.sync.SyncScheduler
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -16,7 +17,8 @@ class BabyRepository @Inject constructor(
     private val feedingDao: FeedingDao,
     private val nappyDao: NappyDao,
     private val milestoneDao: MilestoneDao,
-    private val growthDao: GrowthDao
+    private val growthDao: GrowthDao,
+    private val syncScheduler: SyncScheduler
 ) {
 
     fun getAllBabies(): Flow<List<Baby>> = babyDao.getAllBabies()
@@ -25,11 +27,16 @@ class BabyRepository @Inject constructor(
 
     suspend fun getBabyByIdOnce(id: Long): Baby? = babyDao.getBabyByIdOnce(id)
 
-    suspend fun insertBaby(baby: Baby): Long =
-        babyDao.insertBaby(baby.copy(updatedAtMs = System.currentTimeMillis()))
+    suspend fun insertBaby(baby: Baby): Long {
+        val id = babyDao.insertBaby(baby.copy(updatedAtMs = System.currentTimeMillis()))
+        syncScheduler.requestSyncSoon()
+        return id
+    }
 
-    suspend fun updateBaby(baby: Baby) =
+    suspend fun updateBaby(baby: Baby) {
         babyDao.updateBaby(baby.copy(updatedAtMs = System.currentTimeMillis()))
+        syncScheduler.requestSyncSoon()
+    }
 
     suspend fun deleteBaby(baby: Baby) {
         val now = System.currentTimeMillis()
@@ -39,6 +46,7 @@ class BabyRepository @Inject constructor(
         milestoneDao.softDeleteAllForBaby(baby.id, now)
         growthDao.softDeleteAllForBaby(baby.id, now)
         babyDao.updateBaby(baby.copy(deletedAtMs = now, updatedAtMs = now))
+        syncScheduler.requestSyncSoon()
     }
 
 }

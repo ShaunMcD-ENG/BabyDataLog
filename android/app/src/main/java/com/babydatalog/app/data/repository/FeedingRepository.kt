@@ -3,6 +3,7 @@ package com.babydatalog.app.data.repository
 import com.babydatalog.app.data.database.dao.BabyDao
 import com.babydatalog.app.data.database.dao.FeedingDao
 import com.babydatalog.app.data.database.entity.FeedingSession
+import com.babydatalog.app.data.sync.SyncScheduler
 import com.babydatalog.app.utils.floorToMinute
 import com.babydatalog.app.utils.syncUuidFor
 import kotlinx.coroutines.flow.Flow
@@ -12,7 +13,8 @@ import javax.inject.Singleton
 @Singleton
 class FeedingRepository @Inject constructor(
     private val feedingDao: FeedingDao,
-    private val babyDao: BabyDao
+    private val babyDao: BabyDao,
+    private val syncScheduler: SyncScheduler
 ) {
 
     fun getFeedingsForBaby(babyId: Long): Flow<List<FeedingSession>> =
@@ -30,15 +32,21 @@ class FeedingRepository @Inject constructor(
     fun getTotalFeedingsForDay(babyId: Long, dayStartMs: Long, dayEndMs: Long): Flow<Int> =
         feedingDao.getTotalFeedingsForDay(babyId, dayStartMs, dayEndMs)
 
-    suspend fun insertFeeding(feeding: FeedingSession): Long =
-        feedingDao.insertFeeding(feeding.copy(updatedAtMs = System.currentTimeMillis()))
+    suspend fun insertFeeding(feeding: FeedingSession): Long {
+        val id = feedingDao.insertFeeding(feeding.copy(updatedAtMs = System.currentTimeMillis()))
+        syncScheduler.requestSyncSoon()
+        return id
+    }
 
-    suspend fun updateFeeding(feeding: FeedingSession) =
+    suspend fun updateFeeding(feeding: FeedingSession) {
         feedingDao.updateFeeding(feeding.copy(updatedAtMs = System.currentTimeMillis()))
+        syncScheduler.requestSyncSoon()
+    }
 
     suspend fun deleteFeeding(feeding: FeedingSession) {
         val now = System.currentTimeMillis()
         feedingDao.updateFeeding(feeding.copy(deletedAtMs = now, updatedAtMs = now))
+        syncScheduler.requestSyncSoon()
     }
 
     suspend fun upsertFeeding(feeding: FeedingSession) {
@@ -58,6 +66,7 @@ class FeedingRepository @Inject constructor(
         } else {
             feedingDao.updateFeeding(feeding.copy(updatedAtMs = now))
         }
+        syncScheduler.requestSyncSoon()
     }
 
     suspend fun calculateAndSaveDuration(feeding: FeedingSession): FeedingSession {
@@ -68,6 +77,7 @@ class FeedingRepository @Inject constructor(
             updatedAtMs = System.currentTimeMillis()
         )
         feedingDao.updateFeeding(updated)
+        syncScheduler.requestSyncSoon()
         return updated
     }
 }

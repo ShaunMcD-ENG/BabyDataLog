@@ -47,6 +47,9 @@ interface MilestoneDao {
     @Query("SELECT * FROM milestones WHERE syncUuid = :uuid LIMIT 1")
     suspend fun getByUuid(uuid: String): Milestone?
 
+    @Query("SELECT * FROM milestones WHERE babyId = :babyId AND timestampMs >= :minuteStart AND timestampMs < :minuteEnd AND lower(trim(title)) = :titleLower LIMIT 1")
+    suspend fun getByNaturalKey(babyId: Long, minuteStart: Long, minuteEnd: Long, titleLower: String): Milestone?
+
     @Query("DELETE FROM milestones")
     suspend fun deleteAll()
 }

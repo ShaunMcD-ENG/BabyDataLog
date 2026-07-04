@@ -211,6 +211,56 @@ export function runMigrations() {
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_baby_uuid_v1', '1')").run();
   }
 
+  // One-time migration: merge duplicate child records created before
+  // natural-key matching existed (same event logged on two phones under
+  // different random syncUuids). Keeps the most recently updated row.
+  const dedupeDone = db
+    .prepare("SELECT value FROM settings WHERE key = 'migration_dedupe_natural_v1'")
+    .get();
+
+  if (!dedupeDone) {
+    const MINUTE_MS = 60_000;
+    const CHILD_TABLES: { table: string; timeCol: string; extraKey?: string }[] = [
+      { table: "feeding_sessions", timeCol: "startTimeMs" },
+      { table: "nappy_changes", timeCol: "timestampMs" },
+      { table: "growth_measurements", timeCol: "timestampMs" },
+      { table: "milestones", timeCol: "timestampMs", extraKey: "title" },
+    ];
+
+    db.transaction(() => {
+      for (const { table, timeCol, extraKey } of CHILD_TABLES) {
+        const rows = db
+          .prepare(`SELECT * FROM ${table}`)
+          .all() as Record<string, unknown>[];
+
+        const groups = new Map<string, Record<string, unknown>[]>();
+        for (const row of rows) {
+          const minute = Math.floor(Number(row[timeCol]) / MINUTE_MS);
+          const extra = extraKey ? String(row[extraKey] ?? "").trim().toLowerCase() : "";
+          const key = `${row.babyId}:${minute}:${extra}`;
+          const group = groups.get(key) ?? [];
+          group.push(row);
+          groups.set(key, group);
+        }
+
+        const del = db.prepare(`DELETE FROM ${table} WHERE id = ?`);
+        for (const group of groups.values()) {
+          if (group.length < 2) continue;
+          group.sort(
+            (a, b) =>
+              Number(b.updatedAtMs ?? b.createdAtMs ?? 0) -
+              Number(a.updatedAtMs ?? a.createdAtMs ?? 0)
+          );
+          for (const loser of group.slice(1)) del.run(loser.id);
+        }
+      }
+    })();
+
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_dedupe_natural_v1', '1')"
+    ).run();
+  }
+
   // Index for efficient pull filtering — safe to run if already exists
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_feedings_updatedAt   ON feeding_sessions(updatedAtMs);

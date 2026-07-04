@@ -42,6 +42,9 @@ interface GrowthDao {
     @Query("SELECT * FROM growth_measurements WHERE syncUuid = :uuid LIMIT 1")
     suspend fun getByUuid(uuid: String): GrowthMeasurement?
 
+    @Query("SELECT * FROM growth_measurements WHERE babyId = :babyId AND timestampMs >= :minuteStart AND timestampMs < :minuteEnd LIMIT 1")
+    suspend fun getByNaturalKey(babyId: Long, minuteStart: Long, minuteEnd: Long): GrowthMeasurement?
+
     @Query("DELETE FROM growth_measurements")
     suspend fun deleteAll()
 }

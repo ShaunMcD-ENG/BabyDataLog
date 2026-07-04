@@ -3,6 +3,7 @@ package com.babydatalog.app.data.repository
 import com.babydatalog.app.data.database.dao.BabyDao
 import com.babydatalog.app.data.database.dao.GrowthDao
 import com.babydatalog.app.data.database.entity.GrowthMeasurement
+import com.babydatalog.app.data.sync.SyncScheduler
 import com.babydatalog.app.utils.floorToMinute
 import com.babydatalog.app.utils.syncUuidFor
 import javax.inject.Inject
@@ -11,7 +12,8 @@ import javax.inject.Singleton
 @Singleton
 class GrowthRepository @Inject constructor(
     private val growthDao: GrowthDao,
-    private val babyDao: BabyDao
+    private val babyDao: BabyDao,
+    private val syncScheduler: SyncScheduler
 ) {
 
     fun getMeasurementsForBaby(babyId: Long) = growthDao.getMeasurementsForBaby(babyId)
@@ -37,10 +39,12 @@ class GrowthRepository @Inject constructor(
         } else {
             growthDao.updateMeasurement(m.copy(updatedAtMs = now))
         }
+        syncScheduler.requestSyncSoon()
     }
 
     suspend fun deleteMeasurement(m: GrowthMeasurement) {
         val now = System.currentTimeMillis()
         growthDao.updateMeasurement(m.copy(deletedAtMs = now, updatedAtMs = now))
+        syncScheduler.requestSyncSoon()
     }
 }

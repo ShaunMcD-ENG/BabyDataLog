@@ -18,7 +18,11 @@ class SyncWorker @AssistedInject constructor(
         if (!syncRepository.isConnected) return Result.success()
         return when (syncRepository.sync()) {
             is SyncResult.Success -> Result.success()
-            is SyncResult.Error -> Result.retry()
+            // Cap retries: unbounded Result.retry() lets exponential backoff
+            // climb to 5 hours and starves the periodic schedule. After two
+            // attempts, give up and let the next periodic run try again.
+            is SyncResult.Error ->
+                if (runAttemptCount < 2) Result.retry() else Result.failure()
         }
     }
 }

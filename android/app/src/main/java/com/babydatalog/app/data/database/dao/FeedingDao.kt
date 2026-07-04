@@ -64,6 +64,9 @@ interface FeedingDao {
     @Query("SELECT * FROM feeding_sessions WHERE syncUuid = :uuid LIMIT 1")
     suspend fun getByUuid(uuid: String): FeedingSession?
 
+    @Query("SELECT * FROM feeding_sessions WHERE babyId = :babyId AND startTimeMs >= :minuteStart AND startTimeMs < :minuteEnd LIMIT 1")
+    suspend fun getByNaturalKey(babyId: Long, minuteStart: Long, minuteEnd: Long): FeedingSession?
+
     @Query("DELETE FROM feeding_sessions")
     suspend fun deleteAll()
 }

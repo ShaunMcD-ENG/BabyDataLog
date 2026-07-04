@@ -4,6 +4,7 @@ import com.babydatalog.app.data.database.dao.BabyDao
 import com.babydatalog.app.data.database.dao.MilestoneDao
 import com.babydatalog.app.data.database.entity.Milestone
 import com.babydatalog.app.data.database.entity.MilestoneCategory
+import com.babydatalog.app.data.sync.SyncScheduler
 import com.babydatalog.app.utils.floorToMinute
 import com.babydatalog.app.utils.syncUuidFor
 import kotlinx.coroutines.flow.Flow
@@ -13,7 +14,8 @@ import javax.inject.Singleton
 @Singleton
 class MilestoneRepository @Inject constructor(
     private val milestoneDao: MilestoneDao,
-    private val babyDao: BabyDao
+    private val babyDao: BabyDao,
+    private val syncScheduler: SyncScheduler
 ) {
 
     fun getMilestonesForBaby(babyId: Long): Flow<List<Milestone>> =
@@ -25,15 +27,21 @@ class MilestoneRepository @Inject constructor(
     fun getMilestonesByCategory(babyId: Long, category: MilestoneCategory): Flow<List<Milestone>> =
         milestoneDao.getMilestonesByCategory(babyId, category)
 
-    suspend fun insertMilestone(milestone: Milestone): Long =
-        milestoneDao.insertMilestone(milestone.copy(updatedAtMs = System.currentTimeMillis()))
+    suspend fun insertMilestone(milestone: Milestone): Long {
+        val id = milestoneDao.insertMilestone(milestone.copy(updatedAtMs = System.currentTimeMillis()))
+        syncScheduler.requestSyncSoon()
+        return id
+    }
 
-    suspend fun updateMilestone(milestone: Milestone) =
+    suspend fun updateMilestone(milestone: Milestone) {
         milestoneDao.updateMilestone(milestone.copy(updatedAtMs = System.currentTimeMillis()))
+        syncScheduler.requestSyncSoon()
+    }
 
     suspend fun deleteMilestone(milestone: Milestone) {
         val now = System.currentTimeMillis()
         milestoneDao.updateMilestone(milestone.copy(deletedAtMs = now, updatedAtMs = now))
+        syncScheduler.requestSyncSoon()
     }
 
     suspend fun upsertMilestone(milestone: Milestone) {
@@ -54,5 +62,6 @@ class MilestoneRepository @Inject constructor(
         } else {
             milestoneDao.updateMilestone(milestone.copy(updatedAtMs = now))
         }
+        syncScheduler.requestSyncSoon()
     }
 }

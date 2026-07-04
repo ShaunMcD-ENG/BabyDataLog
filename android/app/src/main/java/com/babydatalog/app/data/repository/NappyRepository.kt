@@ -4,6 +4,7 @@ import com.babydatalog.app.data.database.dao.BabyDao
 import com.babydatalog.app.data.database.dao.NappyDao
 import com.babydatalog.app.data.database.entity.NappyChange
 import com.babydatalog.app.data.database.entity.NappyType
+import com.babydatalog.app.data.sync.SyncScheduler
 import com.babydatalog.app.utils.floorToMinute
 import com.babydatalog.app.utils.syncUuidFor
 import kotlinx.coroutines.flow.Flow
@@ -13,7 +14,8 @@ import javax.inject.Singleton
 @Singleton
 class NappyRepository @Inject constructor(
     private val nappyDao: NappyDao,
-    private val babyDao: BabyDao
+    private val babyDao: BabyDao,
+    private val syncScheduler: SyncScheduler
 ) {
 
     fun getNappiesForBaby(babyId: Long): Flow<List<NappyChange>> =
@@ -32,15 +34,21 @@ class NappyRepository @Inject constructor(
         babyId: Long, startMs: Long, endMs: Long, type: NappyType
     ): Flow<Int> = nappyDao.getNappyCountByType(babyId, startMs, endMs, type)
 
-    suspend fun insertNappy(nappy: NappyChange): Long =
-        nappyDao.insertNappy(nappy.copy(updatedAtMs = System.currentTimeMillis()))
+    suspend fun insertNappy(nappy: NappyChange): Long {
+        val id = nappyDao.insertNappy(nappy.copy(updatedAtMs = System.currentTimeMillis()))
+        syncScheduler.requestSyncSoon()
+        return id
+    }
 
-    suspend fun updateNappy(nappy: NappyChange) =
+    suspend fun updateNappy(nappy: NappyChange) {
         nappyDao.updateNappy(nappy.copy(updatedAtMs = System.currentTimeMillis()))
+        syncScheduler.requestSyncSoon()
+    }
 
     suspend fun deleteNappy(nappy: NappyChange) {
         val now = System.currentTimeMillis()
         nappyDao.updateNappy(nappy.copy(deletedAtMs = now, updatedAtMs = now))
+        syncScheduler.requestSyncSoon()
     }
 
     suspend fun upsertNappy(nappy: NappyChange) {
@@ -60,5 +68,6 @@ class NappyRepository @Inject constructor(
         } else {
             nappyDao.updateNappy(nappy.copy(updatedAtMs = now))
         }
+        syncScheduler.requestSyncSoon()
     }
 }

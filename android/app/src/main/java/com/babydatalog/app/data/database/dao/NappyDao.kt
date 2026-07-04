@@ -66,6 +66,9 @@ interface NappyDao {
     @Query("SELECT * FROM nappy_changes WHERE syncUuid = :uuid LIMIT 1")
     suspend fun getByUuid(uuid: String): NappyChange?
 
+    @Query("SELECT * FROM nappy_changes WHERE babyId = :babyId AND timestampMs >= :minuteStart AND timestampMs < :minuteEnd LIMIT 1")
+    suspend fun getByNaturalKey(babyId: Long, minuteStart: Long, minuteEnd: Long): NappyChange?
+
     @Query("DELETE FROM nappy_changes")
     suspend fun deleteAll()
 }
