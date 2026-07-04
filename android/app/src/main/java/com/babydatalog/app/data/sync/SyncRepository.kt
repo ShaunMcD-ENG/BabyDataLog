@@ -5,13 +5,19 @@ import com.babydatalog.app.data.database.dao.FeedingDao
 import com.babydatalog.app.data.database.dao.GrowthDao
 import com.babydatalog.app.data.database.dao.MilestoneDao
 import com.babydatalog.app.data.database.dao.NappyDao
+import com.babydatalog.app.data.database.entity.Baby
 import com.babydatalog.app.utils.floorToDay
 import com.babydatalog.app.utils.floorToMinute
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -79,17 +85,20 @@ class SyncRepository @Inject constructor(
         if (pullResult.error != null) return SyncResult.Error("Pull failed: ${pullResult.error}")
         val pull = pullResult.data ?: return SyncResult.Error("Pull failed: empty response")
 
-        val skipped = try {
+        val pullDeferred = try {
             applyPull(pull)
         } catch (e: Exception) {
             return SyncResult.Error("Pull apply failed: ${e.javaClass.simpleName}: ${e.message}")
         }
 
-        if (skipped > 0 || push.heldBack > 0) {
+        val deferred = push.heldBack + pullDeferred
+        saveDeferred(deferred)
+
+        if (deferred.isNotEmpty()) {
             // Don't advance lastSyncMs: the affected records stay in the next
             // pull window so they can be retried once their baby exists.
             return SyncResult.Error(
-                "Sync completed with ${skipped + push.heldBack} record(s) deferred; they will retry next sync"
+                "Sync completed with ${deferred.size} record(s) deferred — see the list below to fix them"
             )
         }
 
@@ -105,15 +114,16 @@ class SyncRepository @Inject constructor(
         milestoneDao.deleteAll()
         growthDao.deleteAll()
         prefs.lastSyncMs = 0L
+        prefs.deferredRecordsJson = null
         return sync()
     }
 
     fun disconnect() = prefs.clear()
 
-    private data class PushOutcome(val error: String?, val heldBack: Int = 0)
+    private data class PushOutcome(val error: String?, val heldBack: List<DeferredRecord> = emptyList())
 
     private suspend fun pushAll(serverUrl: String, apiKey: String, deviceId: String): PushOutcome {
-        data class TablePush(val name: String, val records: List<kotlinx.serialization.json.JsonElement>)
+        data class TablePush(val name: String, val records: List<JsonElement>)
 
         // Build id→syncUuid map so child records can include babySyncUuid.
         // The server uses babySyncUuid to resolve the correct server-side babyId,
@@ -121,27 +131,48 @@ class SyncRepository @Inject constructor(
         // baby can't be resolved are held back rather than pushed with a blank
         // uuid, which the server would have to reject.
         val babyUuidMap = babyDao.getAllForSync().associate { it.id to it.syncUuid }
-        var heldBack = 0
+        val heldBack = mutableListOf<DeferredRecord>()
 
-        fun uuidFor(babyId: Long): String? {
-            val uuid = babyUuidMap[babyId]
-            if (uuid.isNullOrBlank()) heldBack++
-            return if (uuid.isNullOrBlank()) null else uuid
+        fun holdBack(table: String, syncUuid: String, description: String, recordJson: String): Nothing? {
+            heldBack += DeferredRecord(
+                table = table,
+                syncUuid = syncUuid,
+                description = description,
+                reason = "Can't push: this record's baby has no sync identity on this device",
+                recordJson = recordJson
+            )
+            return null
         }
 
         val tables = listOf(
             TablePush("babies", babyDao.getAllForSync().map { json.encodeToJsonElement(it.toSync()) }),
             TablePush("feeding_sessions", feedingDao.getAllForSync().mapNotNull { f ->
-                uuidFor(f.babyId)?.let { json.encodeToJsonElement(f.toSync().copy(babySyncUuid = it)) }
+                val uuid = babyUuidMap[f.babyId]
+                val dto = f.toSync().copy(babySyncUuid = uuid ?: "")
+                if (uuid.isNullOrBlank()) {
+                    holdBack("feeding_sessions", f.syncUuid, describeFeeding(f.startTimeMs), json.encodeToString(dto))
+                } else json.encodeToJsonElement(dto)
             }),
             TablePush("nappy_changes", nappyDao.getAllForSync().mapNotNull { n ->
-                uuidFor(n.babyId)?.let { json.encodeToJsonElement(n.toSync().copy(babySyncUuid = it)) }
+                val uuid = babyUuidMap[n.babyId]
+                val dto = n.toSync().copy(babySyncUuid = uuid ?: "")
+                if (uuid.isNullOrBlank()) {
+                    holdBack("nappy_changes", n.syncUuid, describeNappy(n.type.name, n.timestampMs), json.encodeToString(dto))
+                } else json.encodeToJsonElement(dto)
             }),
             TablePush("milestones", milestoneDao.getAllForSync().mapNotNull { m ->
-                uuidFor(m.babyId)?.let { json.encodeToJsonElement(m.toSync().copy(babySyncUuid = it)) }
+                val uuid = babyUuidMap[m.babyId]
+                val dto = m.toSync().copy(babySyncUuid = uuid ?: "")
+                if (uuid.isNullOrBlank()) {
+                    holdBack("milestones", m.syncUuid, describeMilestone(m.title, m.timestampMs), json.encodeToString(dto))
+                } else json.encodeToJsonElement(dto)
             }),
             TablePush("growth_measurements", growthDao.getAllForSync().mapNotNull { g ->
-                uuidFor(g.babyId)?.let { json.encodeToJsonElement(g.toSync().copy(babySyncUuid = it)) }
+                val uuid = babyUuidMap[g.babyId]
+                val dto = g.toSync().copy(babySyncUuid = uuid ?: "")
+                if (uuid.isNullOrBlank()) {
+                    holdBack("growth_measurements", g.syncUuid, describeGrowth(g.timestampMs), json.encodeToString(dto))
+                } else json.encodeToJsonElement(dto)
             })
         )
         for (table in tables) {
@@ -161,29 +192,62 @@ class SyncRepository @Inject constructor(
      * key match the local row adopts the server's syncUuid, and data is
      * merged last-write-wins by updatedAtMs.
      *
-     * Returns the number of records that could not be applied (unknown baby).
+     * Returns the records that could not be applied (unknown baby).
      */
-    private suspend fun applyPull(pull: SyncPullResponse): Int {
-        var skipped = 0
+    private suspend fun applyPull(pull: SyncPullResponse): List<DeferredRecord> {
+        val deferred = mutableListOf<DeferredRecord>()
 
-        // Babies first so child-record babyId remapping can resolve
+        fun defer(table: String, syncUuid: String, description: String, babyUuid: String, el: JsonElement) {
+            deferred += DeferredRecord(
+                table = table,
+                syncUuid = syncUuid,
+                description = description,
+                reason = "This record's baby (server id ${babyUuid.take(8)}…) isn't on this device",
+                recordJson = el.toString()
+            )
+        }
+
+        // Babies first so child-record babyId remapping can resolve.
+        // Two passes: exact uuid matches claim their local rows first, then
+        // natural-key adoption runs only against unclaimed live rows, with
+        // live server babies given priority over tombstones. This stops a
+        // soft-deleted duplicate on the server from stealing a live local
+        // baby's identity (which orphans all of its child records).
         val pulledBabies = pull.data["babies"]?.jsonArray
             ?.map { json.decodeFromJsonElement<SyncBaby>(it) } ?: emptyList()
 
+        val claimedLocalIds = mutableSetOf<Long>()
+        val unmatched = mutableListOf<SyncBaby>()
+
         for (serverBaby in pulledBabies) {
-            val byUuid = babyDao.getByUuid(serverBaby.syncUuid)
-            val existing = byUuid ?: run {
-                val dayStart = floorToDay(serverBaby.birthDateMs)
-                babyDao.getByNaturalKey(serverBaby.name.trim().lowercase(), dayStart, dayStart + DAY_MS)
+            val existing = babyDao.getByUuid(serverBaby.syncUuid)
+            if (existing == null) {
+                unmatched += serverBaby
+                continue
             }
+            claimedLocalIds += existing.id
+            if (serverBaby.updatedAtMs > existing.updatedAtMs) {
+                babyDao.updateBaby(serverBaby.toEntity().copy(id = existing.id))
+            }
+        }
+
+        for (serverBaby in unmatched.sortedBy { if (it.deletedAtMs == null) 0 else 1 }) {
+            val dayStart = floorToDay(serverBaby.birthDateMs)
+            val candidate = babyDao
+                .getByNaturalKey(serverBaby.name.trim().lowercase(), dayStart, dayStart + DAY_MS)
+                ?.takeIf { it.id !in claimedLocalIds }
             when {
-                existing == null -> babyDao.insertBaby(serverBaby.toEntity().copy(id = 0L))
-                serverBaby.updatedAtMs > existing.updatedAtMs ->
-                    babyDao.updateBaby(serverBaby.toEntity().copy(id = existing.id))
-                existing.syncUuid != serverBaby.syncUuid ->
+                candidate == null -> babyDao.insertBaby(serverBaby.toEntity().copy(id = 0L))
+                serverBaby.updatedAtMs > candidate.updatedAtMs -> {
+                    babyDao.updateBaby(serverBaby.toEntity().copy(id = candidate.id))
+                    claimedLocalIds += candidate.id
+                }
+                else -> {
                     // Local data is newer but identity must converge on the
                     // server's uuid; the next push then updates the server row.
-                    babyDao.updateBaby(existing.copy(syncUuid = serverBaby.syncUuid))
+                    babyDao.updateBaby(candidate.copy(syncUuid = serverBaby.syncUuid))
+                    claimedLocalIds += candidate.id
+                }
             }
         }
 
@@ -205,7 +269,10 @@ class SyncRepository @Inject constructor(
         pull.data["feeding_sessions"]?.jsonArray?.forEach { el ->
             val record = json.decodeFromJsonElement<SyncFeeding>(el)
             val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId)
-                ?: run { skipped++; return@forEach }
+                ?: run {
+                    defer("feeding_sessions", record.syncUuid, describeFeeding(record.startTimeMs), record.babySyncUuid, el)
+                    return@forEach
+                }
             val entity = record.toEntity().copy(babyId = localBabyId)
             val minute = floorToMinute(record.startTimeMs)
             val existing = feedingDao.getByUuid(record.syncUuid)
@@ -222,7 +289,10 @@ class SyncRepository @Inject constructor(
         pull.data["nappy_changes"]?.jsonArray?.forEach { el ->
             val record = json.decodeFromJsonElement<SyncNappy>(el)
             val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId)
-                ?: run { skipped++; return@forEach }
+                ?: run {
+                    defer("nappy_changes", record.syncUuid, describeNappy(record.type, record.timestampMs), record.babySyncUuid, el)
+                    return@forEach
+                }
             val entity = record.toEntity().copy(babyId = localBabyId)
             val minute = floorToMinute(record.timestampMs)
             val existing = nappyDao.getByUuid(record.syncUuid)
@@ -239,7 +309,10 @@ class SyncRepository @Inject constructor(
         pull.data["milestones"]?.jsonArray?.forEach { el ->
             val record = json.decodeFromJsonElement<SyncMilestone>(el)
             val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId)
-                ?: run { skipped++; return@forEach }
+                ?: run {
+                    defer("milestones", record.syncUuid, describeMilestone(record.title, record.timestampMs), record.babySyncUuid, el)
+                    return@forEach
+                }
             val entity = record.toEntity().copy(babyId = localBabyId)
             val minute = floorToMinute(record.timestampMs)
             val existing = milestoneDao.getByUuid(record.syncUuid)
@@ -258,7 +331,10 @@ class SyncRepository @Inject constructor(
         pull.data["growth_measurements"]?.jsonArray?.forEach { el ->
             val record = json.decodeFromJsonElement<SyncGrowth>(el)
             val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId)
-                ?: run { skipped++; return@forEach }
+                ?: run {
+                    defer("growth_measurements", record.syncUuid, describeGrowth(record.timestampMs), record.babySyncUuid, el)
+                    return@forEach
+                }
             val entity = record.toEntity().copy(babyId = localBabyId)
             val minute = floorToMinute(record.timestampMs)
             val existing = growthDao.getByUuid(record.syncUuid)
@@ -272,8 +348,84 @@ class SyncRepository @Inject constructor(
             }
         }
 
-        return skipped
+        return deferred
     }
+
+    // --- Deferred record management ---
+
+    fun deferredRecords(): List<DeferredRecord> {
+        val raw = prefs.deferredRecordsJson ?: return emptyList()
+        return try {
+            json.decodeFromString(raw)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun saveDeferred(records: List<DeferredRecord>) {
+        prefs.deferredRecordsJson = if (records.isEmpty()) null else json.encodeToString(records)
+    }
+
+    fun dismissDeferred(record: DeferredRecord) {
+        saveDeferred(deferredRecords().filterNot { it.syncUuid == record.syncUuid && it.table == record.table })
+    }
+
+    suspend fun localBabies(): List<Baby> =
+        babyDao.getAllForSync().filter { it.deletedAtMs == null }
+
+    /**
+     * Fixes a deferred record by attaching it to the chosen local baby.
+     * The record is upserted locally (keeping its server syncUuid) with a
+     * fresh updatedAtMs so the next push relinks it on the server too.
+     */
+    suspend fun assignDeferredToBaby(record: DeferredRecord, babyId: Long): SyncResult {
+        val now = System.currentTimeMillis()
+        try {
+            when (record.table) {
+                "feeding_sessions" -> {
+                    val entity = json.decodeFromString<SyncFeeding>(record.recordJson)
+                        .toEntity().copy(babyId = babyId, updatedAtMs = now)
+                    val existing = feedingDao.getByUuid(record.syncUuid)
+                    if (existing == null) feedingDao.insertFeeding(entity.copy(id = 0L))
+                    else feedingDao.updateFeeding(entity.copy(id = existing.id))
+                }
+                "nappy_changes" -> {
+                    val entity = json.decodeFromString<SyncNappy>(record.recordJson)
+                        .toEntity().copy(babyId = babyId, updatedAtMs = now)
+                    val existing = nappyDao.getByUuid(record.syncUuid)
+                    if (existing == null) nappyDao.insertNappy(entity.copy(id = 0L))
+                    else nappyDao.updateNappy(entity.copy(id = existing.id))
+                }
+                "milestones" -> {
+                    val entity = json.decodeFromString<SyncMilestone>(record.recordJson)
+                        .toEntity().copy(babyId = babyId, updatedAtMs = now)
+                    val existing = milestoneDao.getByUuid(record.syncUuid)
+                    if (existing == null) milestoneDao.insertMilestone(entity.copy(id = 0L))
+                    else milestoneDao.updateMilestone(entity.copy(id = existing.id))
+                }
+                "growth_measurements" -> {
+                    val entity = json.decodeFromString<SyncGrowth>(record.recordJson)
+                        .toEntity().copy(babyId = babyId, updatedAtMs = now)
+                    val existing = growthDao.getByUuid(record.syncUuid)
+                    if (existing == null) growthDao.insertMeasurement(entity.copy(id = 0L))
+                    else growthDao.updateMeasurement(entity.copy(id = existing.id))
+                }
+                else -> return SyncResult.Error("Unknown table ${record.table}")
+            }
+        } catch (e: Exception) {
+            return SyncResult.Error("Couldn't fix record: ${e.message}")
+        }
+        dismissDeferred(record)
+        return SyncResult.Success
+    }
+
+    // --- Description helpers for the deferred list ---
+
+    private val descDateFormat = SimpleDateFormat("d MMM HH:mm", Locale.getDefault())
+    private fun describeFeeding(ms: Long) = "Feeding • ${descDateFormat.format(Date(ms))}"
+    private fun describeNappy(type: String, ms: Long) = "Nappy ($type) • ${descDateFormat.format(Date(ms))}"
+    private fun describeMilestone(title: String, ms: Long) = "Milestone \"$title\" • ${descDateFormat.format(Date(ms))}"
+    private fun describeGrowth(ms: Long) = "Growth • ${descDateFormat.format(Date(ms))}"
 
     private fun generatePairingCode(): String {
         val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"

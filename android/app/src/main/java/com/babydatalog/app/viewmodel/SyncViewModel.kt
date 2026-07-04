@@ -2,6 +2,7 @@ package com.babydatalog.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.babydatalog.app.data.sync.DeferredRecord
 import com.babydatalog.app.data.sync.PollResponse
 import com.babydatalog.app.data.sync.SyncPreferences
 import com.babydatalog.app.data.sync.SyncRepository
@@ -15,6 +16,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class BabyOption(val id: Long, val name: String)
+
 sealed class SyncUiState {
     object NotConfigured : SyncUiState()
     data class Pending(
@@ -26,7 +29,9 @@ sealed class SyncUiState {
         val deviceName: String,
         val serverUrl: String,
         val lastSyncMs: Long,
-        val syncError: String? = null
+        val syncError: String? = null,
+        val deferred: List<DeferredRecord> = emptyList(),
+        val babies: List<BabyOption> = emptyList()
     ) : SyncUiState()
     data class Syncing(
         val deviceName: String,
@@ -55,7 +60,7 @@ class SyncViewModel @Inject constructor(
         when {
             serverUrl == null -> _uiState.value = SyncUiState.NotConfigured
             apiKey != null -> {
-                _uiState.value = SyncUiState.Connected(deviceName, serverUrl, prefs.lastSyncMs)
+                setConnected()
                 scheduleAutoSync()
             }
             pairingCode != null -> {
@@ -63,6 +68,21 @@ class SyncViewModel @Inject constructor(
                 startPolling()
             }
             else -> _uiState.value = SyncUiState.NotConfigured
+        }
+    }
+
+    /** Rebuilds the Connected state including the deferred list and baby options. */
+    private fun setConnected(syncError: String? = null) {
+        viewModelScope.launch {
+            val babies = repo.localBabies().map { BabyOption(it.id, it.name) }
+            _uiState.value = SyncUiState.Connected(
+                deviceName = prefs.deviceName ?: "",
+                serverUrl = prefs.serverUrl ?: "",
+                lastSyncMs = prefs.lastSyncMs,
+                syncError = syncError,
+                deferred = repo.deferredRecords(),
+                babies = babies
+            )
         }
     }
 
@@ -87,11 +107,7 @@ class SyncViewModel @Inject constructor(
                 val poll: PollResponse = repo.pollApproval() ?: break
                 when (poll.status) {
                     "approved" -> {
-                        _uiState.value = SyncUiState.Connected(
-                            prefs.deviceName ?: "",
-                            prefs.serverUrl ?: "",
-                            prefs.lastSyncMs
-                        )
+                        setConnected()
                         scheduleAutoSync()
                         break
                     }
@@ -113,13 +129,8 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = SyncUiState.Syncing(current.deviceName, current.serverUrl, current.lastSyncMs)
             when (val result = repo.sync()) {
-                is SyncResult.Success -> _uiState.value = SyncUiState.Connected(
-                    current.deviceName, current.serverUrl, prefs.lastSyncMs
-                )
-                is SyncResult.Error -> _uiState.value = SyncUiState.Connected(
-                    current.deviceName, current.serverUrl, current.lastSyncMs,
-                    syncError = result.message
-                )
+                is SyncResult.Success -> setConnected()
+                is SyncResult.Error -> setConnected(syncError = result.message)
             }
         }
     }
@@ -129,15 +140,25 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = SyncUiState.Syncing(current.deviceName, current.serverUrl, current.lastSyncMs)
             when (val result = repo.wipeAndResync()) {
-                is SyncResult.Success -> _uiState.value = SyncUiState.Connected(
-                    current.deviceName, current.serverUrl, prefs.lastSyncMs
-                )
-                is SyncResult.Error -> _uiState.value = SyncUiState.Connected(
-                    current.deviceName, current.serverUrl, 0L,
-                    syncError = result.message
-                )
+                is SyncResult.Success -> setConnected()
+                is SyncResult.Error -> setConnected(syncError = result.message)
             }
         }
+    }
+
+    /** Attaches a deferred record to the chosen baby, then re-syncs to propagate the fix. */
+    fun assignDeferredToBaby(record: DeferredRecord, babyId: Long) {
+        viewModelScope.launch {
+            when (val result = repo.assignDeferredToBaby(record, babyId)) {
+                is SyncResult.Success -> syncNow()
+                is SyncResult.Error -> setConnected(syncError = result.message)
+            }
+        }
+    }
+
+    fun dismissDeferred(record: DeferredRecord) {
+        repo.dismissDeferred(record)
+        setConnected()
     }
 
     fun disconnect() {

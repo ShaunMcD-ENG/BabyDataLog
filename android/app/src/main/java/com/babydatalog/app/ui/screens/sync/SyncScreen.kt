@@ -46,6 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.babydatalog.app.data.sync.DeferredRecord
+import com.babydatalog.app.viewmodel.BabyOption
 import com.babydatalog.app.viewmodel.SyncUiState
 import com.babydatalog.app.viewmodel.SyncViewModel
 import java.text.SimpleDateFormat
@@ -73,7 +75,14 @@ fun SyncScreen(viewModel: SyncViewModel = hiltViewModel()) {
         when (val state = uiState) {
             is SyncUiState.NotConfigured -> NotConfiguredContent(onConnect = viewModel::connect)
             is SyncUiState.Pending -> PendingContent(state = state, onCancel = viewModel::disconnect)
-            is SyncUiState.Connected -> ConnectedContent(state = state, onSync = viewModel::syncNow, onWipeAndResync = viewModel::wipeAndResync, onDisconnect = viewModel::disconnect)
+            is SyncUiState.Connected -> ConnectedContent(
+                state = state,
+                onSync = viewModel::syncNow,
+                onWipeAndResync = viewModel::wipeAndResync,
+                onDisconnect = viewModel::disconnect,
+                onAssignDeferred = viewModel::assignDeferredToBaby,
+                onDismissDeferred = viewModel::dismissDeferred
+            )
             is SyncUiState.Syncing -> SyncingContent(state = state)
             is SyncUiState.Error -> ErrorContent(state = state, onDismiss = viewModel::dismissError)
         }
@@ -189,7 +198,9 @@ private fun ConnectedContent(
     state: SyncUiState.Connected,
     onSync: () -> Unit,
     onWipeAndResync: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onAssignDeferred: (DeferredRecord, Long) -> Unit,
+    onDismissDeferred: (DeferredRecord) -> Unit
 ) {
     var showWipeConfirm by remember { mutableStateOf(false) }
     var secondsUntilSync by remember { mutableLongStateOf(0L) }
@@ -285,6 +296,15 @@ private fun ConnectedContent(
         }
     }
 
+    if (state.deferred.isNotEmpty()) {
+        DeferredRecordsSection(
+            deferred = state.deferred,
+            babies = state.babies,
+            onAssign = onAssignDeferred,
+            onDismiss = onDismissDeferred
+        )
+    }
+
     Button(onClick = onSync, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
         Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
@@ -302,6 +322,68 @@ private fun ConnectedContent(
     OutlinedButton(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) {
         Text("Disconnect")
     }
+}
+
+@Composable
+private fun DeferredRecordsSection(
+    deferred: List<DeferredRecord>,
+    babies: List<BabyOption>,
+    onAssign: (DeferredRecord, Long) -> Unit,
+    onDismiss: (DeferredRecord) -> Unit
+) {
+    Text(
+        text = "Deferred records (${deferred.size})",
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(bottom = 4.dp)
+    )
+    Text(
+        text = "These records couldn't sync automatically. Assign each one to a baby to fix it, or dismiss to hide it.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+
+    deferred.forEach { record ->
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = record.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = record.reason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 6.dp)
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    babies.forEach { baby ->
+                        Button(
+                            onClick = { onAssign(record, baby.id) },
+                            contentPadding = ButtonDefaults.TextButtonContentPadding
+                        ) {
+                            Text("Add to ${baby.name}", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { onDismiss(record) }) {
+                        Text("Dismiss", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
 }
 
 @Composable

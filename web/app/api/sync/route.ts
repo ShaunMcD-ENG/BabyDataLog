@@ -40,13 +40,17 @@ const STRIP_COLS = new Set(["id", "babySyncUuid"]);
 // the Android syncUuidFor() scheme: baby + minute of the event (+ title for
 // milestones); babies match on name + day of birth.
 function findByNaturalKey(table: SyncTable, record: SyncRecord): SyncRecord | undefined {
+  // Live rows win over tombstones so a soft-deleted duplicate can never
+  // capture (and later resurrect or delete) a live record's identity.
+  const LIVE_FIRST = `ORDER BY (deletedAtMs IS NULL) DESC, updatedAtMs DESC LIMIT 1`;
+
   if (table === "babies") {
     const name = String(record.name ?? "").trim().toLowerCase();
     const birth = Number(record.birthDateMs ?? 0);
     const dayStart = Math.floor(birth / DAY_MS) * DAY_MS;
     return db
       .prepare(
-        `SELECT * FROM babies WHERE lower(trim(name)) = ? AND birthDateMs >= ? AND birthDateMs < ?`
+        `SELECT * FROM babies WHERE lower(trim(name)) = ? AND birthDateMs >= ? AND birthDateMs < ? ${LIVE_FIRST}`
       )
       .get(name, dayStart, dayStart + DAY_MS) as SyncRecord | undefined;
   }
@@ -62,7 +66,7 @@ function findByNaturalKey(table: SyncTable, record: SyncRecord): SyncRecord | un
   if (table === "milestones") {
     return db
       .prepare(
-        `SELECT * FROM milestones WHERE babyId = ? AND ${timeCol} >= ? AND ${timeCol} < ? AND lower(trim(title)) = ?`
+        `SELECT * FROM milestones WHERE babyId = ? AND ${timeCol} >= ? AND ${timeCol} < ? AND lower(trim(title)) = ? ${LIVE_FIRST}`
       )
       .get(babyId, minStart, minStart + MINUTE_MS, String(record.title ?? "").trim().toLowerCase()) as
       | SyncRecord
@@ -70,7 +74,7 @@ function findByNaturalKey(table: SyncTable, record: SyncRecord): SyncRecord | un
   }
 
   return db
-    .prepare(`SELECT * FROM ${table} WHERE babyId = ? AND ${timeCol} >= ? AND ${timeCol} < ?`)
+    .prepare(`SELECT * FROM ${table} WHERE babyId = ? AND ${timeCol} >= ? AND ${timeCol} < ? ${LIVE_FIRST}`)
     .get(babyId, minStart, minStart + MINUTE_MS) as SyncRecord | undefined;
 }
 

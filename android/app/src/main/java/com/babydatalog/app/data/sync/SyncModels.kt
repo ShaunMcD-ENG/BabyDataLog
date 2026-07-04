@@ -33,6 +33,20 @@ data class SyncPushRequest(val deviceId: String, val table: String, val records:
 @Serializable
 data class SyncPullResponse(val syncedAtMs: Long, val data: JsonObject)
 
+/**
+ * A record that could not be synced (in either direction), kept so the user
+ * can see why and fix it from the Sync screen. `recordJson` holds the full
+ * record payload so it can be re-applied once the user picks a baby.
+ */
+@Serializable
+data class DeferredRecord(
+    val table: String,
+    val syncUuid: String,
+    val description: String,
+    val reason: String,
+    val recordJson: String
+)
+
 // --- Per-table serializable DTOs (enums as strings for JSON) ---
 
 @Serializable

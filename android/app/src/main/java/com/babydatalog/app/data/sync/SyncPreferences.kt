@@ -37,6 +37,10 @@ class SyncPreferences @Inject constructor(
         get() = prefs.getLong(KEY_LAST_SYNC_MS, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_SYNC_MS, value).apply()
 
+    var deferredRecordsJson: String?
+        get() = prefs.getString(KEY_DEFERRED_RECORDS, null)
+        set(value) = prefs.edit().putString(KEY_DEFERRED_RECORDS, value).apply()
+
     fun clear() = prefs.edit().clear().apply()
 
     companion object {
@@ -46,5 +50,6 @@ class SyncPreferences @Inject constructor(
         private const val KEY_PAIRING_CODE = "pairing_code"
         private const val KEY_API_KEY = "api_key"
         private const val KEY_LAST_SYNC_MS = "last_sync_ms"
+        private const val KEY_DEFERRED_RECORDS = "deferred_records"
     }
 }

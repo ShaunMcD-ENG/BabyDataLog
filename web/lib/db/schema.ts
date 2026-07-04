@@ -211,11 +211,55 @@ export function runMigrations() {
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_baby_uuid_v1', '1')").run();
   }
 
+  // One-time migration: purge soft-deleted duplicate babies left behind by the
+  // baby-uuid merge migration. Those tombstones share a natural key (name +
+  // birth day) with the surviving live baby, which lets sync clients wrongly
+  // adopt the tombstone's uuid and orphan every child record. Genuine baby
+  // deletions (no live twin) are kept as tombstones.
+  const purgeDone = db
+    .prepare("SELECT value FROM settings WHERE key = 'migration_purge_merged_babies_v1'")
+    .get();
+
+  if (!purgeDone) {
+    const CHILD_TABLES_P = [
+      "feeding_sessions", "nappy_changes", "milestones", "growth_measurements",
+    ] as const;
+
+    const tombstones = db
+      .prepare("SELECT id, name, birthDateMs FROM babies WHERE deletedAtMs IS NOT NULL")
+      .all() as { id: number; name: string; birthDateMs: number }[];
+
+    db.transaction(() => {
+      for (const tomb of tombstones) {
+        const dayStart = floorToDay(tomb.birthDateMs);
+        const live = db
+          .prepare(
+            `SELECT id FROM babies
+             WHERE deletedAtMs IS NULL AND id != ?
+               AND lower(trim(name)) = ? AND birthDateMs >= ? AND birthDateMs < ?`
+          )
+          .get(tomb.id, tomb.name.trim().toLowerCase(), dayStart, dayStart + 86_400_000) as
+          | { id: number }
+          | undefined;
+        if (!live) continue;
+
+        for (const t of CHILD_TABLES_P) {
+          db.prepare(`UPDATE ${t} SET babyId = ? WHERE babyId = ?`).run(live.id, tomb.id);
+        }
+        db.prepare("DELETE FROM babies WHERE id = ?").run(tomb.id);
+      }
+    })();
+
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_purge_merged_babies_v1', '1')"
+    ).run();
+  }
+
   // One-time migration: merge duplicate child records created before
   // natural-key matching existed (same event logged on two phones under
   // different random syncUuids). Keeps the most recently updated row.
   const dedupeDone = db
-    .prepare("SELECT value FROM settings WHERE key = 'migration_dedupe_natural_v1'")
+    .prepare("SELECT value FROM settings WHERE key = 'migration_dedupe_natural_v2'")
     .get();
 
   if (!dedupeDone) {
@@ -257,7 +301,7 @@ export function runMigrations() {
     })();
 
     db.prepare(
-      "INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_dedupe_natural_v1', '1')"
+      "INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_dedupe_natural_v2', '1')"
     ).run();
   }
 

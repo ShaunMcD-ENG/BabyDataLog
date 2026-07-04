@@ -40,7 +40,8 @@ interface BabyDao {
     @Query("SELECT * FROM babies WHERE syncUuid = :uuid LIMIT 1")
     suspend fun getByUuid(uuid: String): Baby?
 
-    @Query("SELECT * FROM babies WHERE lower(trim(name)) = :nameLower AND birthDateMs >= :dayStart AND birthDateMs < :dayEnd LIMIT 1")
+    // Live rows only: a tombstoned local baby must never adopt a server baby's identity
+    @Query("SELECT * FROM babies WHERE lower(trim(name)) = :nameLower AND birthDateMs >= :dayStart AND birthDateMs < :dayEnd AND deletedAtMs IS NULL LIMIT 1")
     suspend fun getByNaturalKey(nameLower: String, dayStart: Long, dayEnd: Long): Baby?
 
     @Query("DELETE FROM babies")
