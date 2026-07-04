@@ -31,7 +31,13 @@ data class PollResponse(val status: String, val apiKey: String? = null)
 data class SyncPushRequest(val deviceId: String, val table: String, val records: JsonArray)
 
 @Serializable
-data class SyncPullResponse(val syncedAtMs: Long, val data: JsonObject)
+data class SyncPullResponse(
+    val syncedAtMs: Long,
+    val data: JsonObject,
+    // Servers older than the sync overhaul don't send this; they can't be
+    // synced against safely (no babySyncUuid in pull, device ids in push).
+    val serverVersion: Int = 1
+)
 
 /**
  * A record that could not be synced (in either direction), kept so the user

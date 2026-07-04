@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthenticated, isValidApiKey } from "@/lib/auth";
 import { logger } from "@/lib/log";
+import { SYNC_SERVER_VERSION } from "@/lib/version";
 import db from "@/lib/db/connection";
 
 const SYNC_TABLES = [
@@ -237,5 +238,7 @@ export async function GET(req: NextRequest) {
     Object.entries(payload).map(([t, rows]) => [t, (rows as unknown[]).length])
   );
   logger.info("SYNC_PULL", { caller, lastSyncMs, since, counts });
-  return NextResponse.json({ syncedAtMs: Date.now(), data: payload });
+  // serverVersion lets clients detect an outdated container that lacks the
+  // babySyncUuid pull format and refuse to half-sync against it.
+  return NextResponse.json({ syncedAtMs: Date.now(), serverVersion: SYNC_SERVER_VERSION, data: payload });
 }

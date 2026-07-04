@@ -8,6 +8,8 @@ import com.babydatalog.app.data.database.dao.NappyDao
 import com.babydatalog.app.data.database.entity.Baby
 import com.babydatalog.app.utils.floorToDay
 import com.babydatalog.app.utils.floorToMinute
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -73,7 +75,12 @@ class SyncRepository @Inject constructor(
         return result.data
     }
 
-    suspend fun sync(): SyncResult {
+    // Serializes syncs: the manual button, the periodic worker, and the
+    // debounced post-write sync can otherwise run concurrently and interleave
+    // their database writes.
+    private val syncMutex = Mutex()
+
+    suspend fun sync(): SyncResult = syncMutex.withLock {
         val serverUrl = prefs.serverUrl ?: return SyncResult.Error("Not connected to a server")
         val deviceId = prefs.deviceId ?: return SyncResult.Error("No device ID")
         val apiKey = prefs.apiKey ?: return SyncResult.Error("Device not yet approved")
@@ -85,14 +92,21 @@ class SyncRepository @Inject constructor(
         if (pullResult.error != null) return SyncResult.Error("Pull failed: ${pullResult.error}")
         val pull = pullResult.data ?: return SyncResult.Error("Pull failed: empty response")
 
-        val pullDeferred = try {
+        val applied = try {
             applyPull(pull)
         } catch (e: Exception) {
             return SyncResult.Error("Pull apply failed: ${e.javaClass.simpleName}: ${e.message}")
         }
 
-        val deferred = push.heldBack + pullDeferred
+        val deferred = push.heldBack + applied.deferred
         saveDeferred(deferred)
+
+        if (applied.serverOutdated || pull.serverVersion < 2) {
+            return SyncResult.Error(
+                "The sync server is running an older version that this app can't fully sync with. " +
+                    "Update the BabyDataLog server container, then sync again."
+            )
+        }
 
         if (deferred.isNotEmpty()) {
             // Don't advance lastSyncMs: the affected records stay in the next
@@ -192,17 +206,28 @@ class SyncRepository @Inject constructor(
      * key match the local row adopts the server's syncUuid, and data is
      * merged last-write-wins by updatedAtMs.
      *
-     * Returns the records that could not be applied (unknown baby).
+     * Returns the records that could not be applied (unknown baby) and
+     * whether the server looks outdated (child rows missing babySyncUuid —
+     * only pre-overhaul servers omit it).
      */
-    private suspend fun applyPull(pull: SyncPullResponse): List<DeferredRecord> {
+    private data class PullApplyResult(
+        val deferred: List<DeferredRecord>,
+        val serverOutdated: Boolean
+    )
+
+    private suspend fun applyPull(pull: SyncPullResponse): PullApplyResult {
         val deferred = mutableListOf<DeferredRecord>()
+        var sawBlankBabyUuid = false
 
         fun defer(table: String, syncUuid: String, description: String, babyUuid: String, el: JsonElement) {
             deferred += DeferredRecord(
                 table = table,
                 syncUuid = syncUuid,
                 description = description,
-                reason = "This record's baby (server id ${babyUuid.take(8)}…) isn't on this device",
+                reason = if (babyUuid.isBlank())
+                    "Record arrived without a baby link — the sync server looks out of date"
+                else
+                    "This record's baby (server id ${babyUuid.take(8)}…) isn't on this device",
                 recordJson = el.toString()
             )
         }
@@ -268,14 +293,18 @@ class SyncRepository @Inject constructor(
 
         pull.data["feeding_sessions"]?.jsonArray?.forEach { el ->
             val record = json.decodeFromJsonElement<SyncFeeding>(el)
-            val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId)
-                ?: run {
-                    defer("feeding_sessions", record.syncUuid, describeFeeding(record.startTimeMs), record.babySyncUuid, el)
-                    return@forEach
-                }
+            if (record.babySyncUuid.isBlank()) sawBlankBabyUuid = true
+            // A record we already hold by uuid never defers — its existing
+            // babyId is the fallback when the server's baby link can't resolve.
+            val byUuid = feedingDao.getByUuid(record.syncUuid)
+            val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId) ?: byUuid?.babyId
+            if (localBabyId == null) {
+                defer("feeding_sessions", record.syncUuid, describeFeeding(record.startTimeMs), record.babySyncUuid, el)
+                return@forEach
+            }
             val entity = record.toEntity().copy(babyId = localBabyId)
             val minute = floorToMinute(record.startTimeMs)
-            val existing = feedingDao.getByUuid(record.syncUuid)
+            val existing = byUuid
                 ?: feedingDao.getByNaturalKey(localBabyId, minute, minute + MINUTE_MS)
             when {
                 existing == null -> feedingDao.insertFeeding(entity.copy(id = 0L))
@@ -288,14 +317,16 @@ class SyncRepository @Inject constructor(
 
         pull.data["nappy_changes"]?.jsonArray?.forEach { el ->
             val record = json.decodeFromJsonElement<SyncNappy>(el)
-            val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId)
-                ?: run {
-                    defer("nappy_changes", record.syncUuid, describeNappy(record.type, record.timestampMs), record.babySyncUuid, el)
-                    return@forEach
-                }
+            if (record.babySyncUuid.isBlank()) sawBlankBabyUuid = true
+            val byUuid = nappyDao.getByUuid(record.syncUuid)
+            val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId) ?: byUuid?.babyId
+            if (localBabyId == null) {
+                defer("nappy_changes", record.syncUuid, describeNappy(record.type, record.timestampMs), record.babySyncUuid, el)
+                return@forEach
+            }
             val entity = record.toEntity().copy(babyId = localBabyId)
             val minute = floorToMinute(record.timestampMs)
-            val existing = nappyDao.getByUuid(record.syncUuid)
+            val existing = byUuid
                 ?: nappyDao.getByNaturalKey(localBabyId, minute, minute + MINUTE_MS)
             when {
                 existing == null -> nappyDao.insertNappy(entity.copy(id = 0L))
@@ -308,14 +339,16 @@ class SyncRepository @Inject constructor(
 
         pull.data["milestones"]?.jsonArray?.forEach { el ->
             val record = json.decodeFromJsonElement<SyncMilestone>(el)
-            val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId)
-                ?: run {
-                    defer("milestones", record.syncUuid, describeMilestone(record.title, record.timestampMs), record.babySyncUuid, el)
-                    return@forEach
-                }
+            if (record.babySyncUuid.isBlank()) sawBlankBabyUuid = true
+            val byUuid = milestoneDao.getByUuid(record.syncUuid)
+            val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId) ?: byUuid?.babyId
+            if (localBabyId == null) {
+                defer("milestones", record.syncUuid, describeMilestone(record.title, record.timestampMs), record.babySyncUuid, el)
+                return@forEach
+            }
             val entity = record.toEntity().copy(babyId = localBabyId)
             val minute = floorToMinute(record.timestampMs)
-            val existing = milestoneDao.getByUuid(record.syncUuid)
+            val existing = byUuid
                 ?: milestoneDao.getByNaturalKey(
                     localBabyId, minute, minute + MINUTE_MS, record.title.trim().lowercase()
                 )
@@ -330,14 +363,16 @@ class SyncRepository @Inject constructor(
 
         pull.data["growth_measurements"]?.jsonArray?.forEach { el ->
             val record = json.decodeFromJsonElement<SyncGrowth>(el)
-            val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId)
-                ?: run {
-                    defer("growth_measurements", record.syncUuid, describeGrowth(record.timestampMs), record.babySyncUuid, el)
-                    return@forEach
-                }
+            if (record.babySyncUuid.isBlank()) sawBlankBabyUuid = true
+            val byUuid = growthDao.getByUuid(record.syncUuid)
+            val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId) ?: byUuid?.babyId
+            if (localBabyId == null) {
+                defer("growth_measurements", record.syncUuid, describeGrowth(record.timestampMs), record.babySyncUuid, el)
+                return@forEach
+            }
             val entity = record.toEntity().copy(babyId = localBabyId)
             val minute = floorToMinute(record.timestampMs)
-            val existing = growthDao.getByUuid(record.syncUuid)
+            val existing = byUuid
                 ?: growthDao.getByNaturalKey(localBabyId, minute, minute + MINUTE_MS)
             when {
                 existing == null -> growthDao.insertMeasurement(entity.copy(id = 0L))
@@ -348,7 +383,7 @@ class SyncRepository @Inject constructor(
             }
         }
 
-        return deferred
+        return PullApplyResult(deferred, serverOutdated = sawBlankBabyUuid)
     }
 
     // --- Deferred record management ---
