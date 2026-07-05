@@ -2,7 +2,7 @@ package com.babydatalog.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.babydatalog.app.data.database.entity.NappyType
+import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.repository.FeedingRepository
 import com.babydatalog.app.data.repository.NappyRepository
 import com.babydatalog.app.utils.monthEndMs
@@ -69,8 +69,8 @@ class SummaryViewModel @Inject constructor(
 
                 val totalFeedings = periodFeedings.size
                 val totalNappies = periodNappies.size
-                val totalPees = periodNappies.count { it.type == NappyType.PEE || it.type == NappyType.BOTH }
-                val totalPoos = periodNappies.count { it.type == NappyType.POO || it.type == NappyType.BOTH }
+                val totalPees = periodNappies.count { it.weeAmount != NappyAmount.NONE }
+                val totalPoos = periodNappies.count { it.pooAmount != NappyAmount.NONE }
 
                 val durationsWithValue = periodFeedings.mapNotNull { it.durationMinutes }
                 val avgDuration = if (durationsWithValue.isNotEmpty()) {

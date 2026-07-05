@@ -3,7 +3,6 @@ package com.babydatalog.app.data.repository
 import com.babydatalog.app.data.database.dao.BabyDao
 import com.babydatalog.app.data.database.dao.NappyDao
 import com.babydatalog.app.data.database.entity.NappyChange
-import com.babydatalog.app.data.database.entity.NappyType
 import com.babydatalog.app.data.sync.SyncScheduler
 import com.babydatalog.app.utils.floorToMinute
 import com.babydatalog.app.utils.syncUuidFor
@@ -29,10 +28,6 @@ class NappyRepository @Inject constructor(
 
     fun getLastNappy(babyId: Long): Flow<NappyChange?> =
         nappyDao.getLastNappy(babyId)
-
-    fun getNappyCountByType(
-        babyId: Long, startMs: Long, endMs: Long, type: NappyType
-    ): Flow<Int> = nappyDao.getNappyCountByType(babyId, startMs, endMs, type)
 
     suspend fun insertNappy(nappy: NappyChange): Long {
         val id = nappyDao.insertNappy(nappy.copy(updatedAtMs = System.currentTimeMillis()))

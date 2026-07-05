@@ -22,6 +22,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -30,6 +32,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,7 +53,9 @@ import com.babydatalog.app.data.database.entity.LatchQuality
 import com.babydatalog.app.ui.components.DateTimePickerRow
 import com.babydatalog.app.ui.components.SectionHeader
 import com.babydatalog.app.ui.components.ToggleChipGroup
+import com.babydatalog.app.ui.screens.nappy.NappyFormFields
 import com.babydatalog.app.viewmodel.FeedingViewModel
+import com.babydatalog.app.viewmodel.NappyViewModel
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,7 +63,8 @@ import kotlinx.coroutines.delay
 fun FeedingFormScreen(
     feedingId: Long = 0L,
     onNavigateBack: () -> Unit,
-    viewModel: FeedingViewModel = hiltViewModel()
+    viewModel: FeedingViewModel = hiltViewModel(),
+    nappyViewModel: NappyViewModel = hiltViewModel()
 ) {
     val state by viewModel.formState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -66,6 +72,7 @@ fun FeedingFormScreen(
     var elapsedSeconds by remember { mutableLongStateOf(0L) }
     var manualMins by remember { mutableStateOf("") }
     var manualSecs by remember { mutableStateOf("") }
+    var showQuickNappySheet by remember { mutableStateOf(false) }
 
     // Load existing feeding for edit
     LaunchedEffect(feedingId) {
@@ -314,6 +321,21 @@ fun FeedingFormScreen(
                 )
             }
 
+            // Nappy — logged separately since a nappy is often changed mid-feed.
+            // Opens in a sheet on this same screen (rather than navigating away)
+            // so it can't clobber unsaved feeding edits or interrupt the timer.
+            SectionHeader("Nappy")
+            OutlinedButton(
+                onClick = {
+                    nappyViewModel.setActiveBabyId(state.babyId)
+                    nappyViewModel.resetForm()
+                    showQuickNappySheet = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("+ Add Nappy Change")
+            }
+
             // Notes
             SectionHeader("Notes")
             OutlinedTextField(
@@ -345,6 +367,86 @@ fun FeedingFormScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+
+    if (showQuickNappySheet) {
+        QuickAddNappySheet(
+            viewModel = nappyViewModel,
+            onDismiss = {
+                showQuickNappySheet = false
+                nappyViewModel.resetForm()
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QuickAddNappySheet(
+    viewModel: NappyViewModel,
+    onDismiss: () -> Unit
+) {
+    val state by viewModel.formState.collectAsStateWithLifecycle()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(state.saveSuccess) {
+        if (state.saveSuccess) onDismiss()
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text("Add Nappy Change", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            NappyFormFields(
+                timestampMs = state.timestampMs,
+                onTimestampChange = { viewModel.updateTimestamp(it) },
+                weeAmount = state.weeAmount,
+                onWeeAmountChange = { viewModel.updateWeeAmount(it) },
+                pooAmount = state.pooAmount,
+                onPooAmountChange = { viewModel.updatePooAmount(it) },
+                pooColour = state.pooColour,
+                onPooColourChange = { viewModel.updatePooColour(it) },
+                notes = state.notes,
+                onNotesChange = { viewModel.updateNotes(it) }
+            )
+
+            state.error?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text("Cancel")
+                }
+                if (state.isSaving) {
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    Button(onClick = { viewModel.saveNappy() }, modifier = Modifier.weight(1f)) {
+                        Text("Save")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

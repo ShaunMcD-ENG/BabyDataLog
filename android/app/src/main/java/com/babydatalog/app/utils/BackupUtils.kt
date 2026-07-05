@@ -10,7 +10,6 @@ import com.babydatalog.app.data.database.entity.Milestone
 import com.babydatalog.app.data.database.entity.MilestoneCategory
 import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.database.entity.NappyChange
-import com.babydatalog.app.data.database.entity.NappyType
 import com.babydatalog.app.data.database.entity.PooColour
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,7 +20,7 @@ import java.util.UUID
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const val BACKUP_FORMAT_VERSION = 1
+const val BACKUP_FORMAT_VERSION = 2
 
 // ─── Data classes ─────────────────────────────────────────────────────────────
 
@@ -111,15 +110,15 @@ suspend fun exportBackup(
 
         // [NAPPIES]
         appendLine("[NAPPIES]")
-        appendLine("id,syncUuid,babyId,timestampMs,type,amount,pooColour,notes,createdAtMs")
+        appendLine("id,syncUuid,babyId,timestampMs,weeAmount,pooAmount,pooColour,notes,createdAtMs")
         nappies.forEach { n ->
             appendLine(
                 "${n.id}," +
                 "${escapeCsv(n.syncUuid)}," +
                 "${n.babyId}," +
                 "${n.timestampMs}," +
-                "${n.type.name}," +
-                "${n.amount.name}," +
+                "${n.weeAmount.name}," +
+                "${n.pooAmount.name}," +
                 "${n.pooColour?.name ?: ""}," +
                 "${escapeCsv(n.notes)}," +
                 "${n.createdAtMs}"
@@ -268,8 +267,7 @@ private fun convertBackupToCurrentVersion(
     var data = sections
     while (current < BACKUP_FORMAT_VERSION) {
         data = when (current) {
-            // When backup format V2 is introduced, add:
-            // 1 -> convertV1toV2(data)
+            1 -> convertV1toV2(data)
             else -> throw BackupException(
                 "Cannot convert backup version $current to current version $BACKUP_FORMAT_VERSION"
             )
@@ -277,6 +275,28 @@ private fun convertBackupToCurrentVersion(
         current++
     }
     return data
+}
+
+// V1 nappies had a single `type` (PEE/POO/BOTH) + `amount` pair. V2 splits
+// that into independent weeAmount/pooAmount columns so each can carry its own
+// quantity; a PEE-only row becomes pooAmount=NONE and vice versa, and BOTH
+// copies the single recorded amount into both columns.
+private fun convertV1toV2(sections: Map<String, List<String>>): Map<String, List<String>> {
+    val nappies = sections["NAPPIES"] ?: return sections
+    val newHeader = "id,syncUuid,babyId,timestampMs,weeAmount,pooAmount,pooColour,notes,createdAtMs"
+    val newRows = nappies.drop(1).mapNotNull { line ->
+        val cols = parseCsvLine(line)
+        if (cols.size < 9) return@mapNotNull null
+        val type = cols[4].trim()
+        val amount = cols[5].trim().ifBlank { "SMALL" }
+        val weeAmount = if (type == "POO") "NONE" else amount
+        val pooAmount = if (type == "PEE") "NONE" else amount
+        listOf(
+            cols[0], escapeCsv(cols[1]), cols[2], cols[3],
+            weeAmount, pooAmount, escapeCsv(cols[6]), escapeCsv(cols[7]), cols[8]
+        ).joinToString(",")
+    }
+    return sections + ("NAPPIES" to (listOf(newHeader) + newRows))
 }
 
 // ─── CSV parsing helpers ──────────────────────────────────────────────────────
@@ -380,15 +400,15 @@ private fun parseNappyRow(line: String): NappyChange? {
     val cols = parseCsvLine(line)
     if (cols.size < 9) return null
     return try {
-        val type = try {
-            cols[4].trim().let { if (it.isBlank()) NappyType.PEE else NappyType.valueOf(it) }
+        val weeAmount = try {
+            cols[4].trim().let { if (it.isBlank()) NappyAmount.NONE else NappyAmount.valueOf(it) }
         } catch (e: IllegalArgumentException) {
-            NappyType.PEE
+            NappyAmount.NONE
         }
-        val amount = try {
-            cols[5].trim().let { if (it.isBlank()) NappyAmount.SMALL else NappyAmount.valueOf(it) }
+        val pooAmount = try {
+            cols[5].trim().let { if (it.isBlank()) NappyAmount.NONE else NappyAmount.valueOf(it) }
         } catch (e: IllegalArgumentException) {
-            NappyAmount.SMALL
+            NappyAmount.NONE
         }
         val pooColour = try {
             cols[6].trim().orNullIfBlank()?.let { PooColour.valueOf(it) }
@@ -400,8 +420,8 @@ private fun parseNappyRow(line: String): NappyChange? {
             syncUuid = cols[1].orNullIfBlank() ?: UUID.randomUUID().toString(),
             babyId = cols[2].toLongOrNullSafe() ?: return null,
             timestampMs = cols[3].toLongOrNullSafe() ?: return null,
-            type = type,
-            amount = amount,
+            weeAmount = weeAmount,
+            pooAmount = pooAmount,
             pooColour = pooColour,
             notes = cols[7].orNullIfBlank(),
             createdAtMs = cols[8].toLongOrNullSafe() ?: System.currentTimeMillis()

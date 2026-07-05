@@ -171,7 +171,7 @@ class SyncRepository @Inject constructor(
                 val uuid = babyUuidMap[n.babyId]
                 val dto = n.toSync().copy(babySyncUuid = uuid ?: "")
                 if (uuid.isNullOrBlank()) {
-                    holdBack("nappy_changes", n.syncUuid, describeNappy(n.type.name, n.timestampMs), json.encodeToString(dto))
+                    holdBack("nappy_changes", n.syncUuid, describeNappy(n.weeAmount.name, n.pooAmount.name, n.timestampMs), json.encodeToString(dto))
                 } else json.encodeToJsonElement(dto)
             }),
             TablePush("milestones", milestoneDao.getAllForSync().mapNotNull { m ->
@@ -321,7 +321,7 @@ class SyncRepository @Inject constructor(
             val byUuid = nappyDao.getByUuid(record.syncUuid)
             val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId) ?: byUuid?.babyId
             if (localBabyId == null) {
-                defer("nappy_changes", record.syncUuid, describeNappy(record.type, record.timestampMs), record.babySyncUuid, el)
+                defer("nappy_changes", record.syncUuid, describeNappy(record.weeAmount, record.pooAmount, record.timestampMs), record.babySyncUuid, el)
                 return@forEach
             }
             val entity = record.toEntity().copy(babyId = localBabyId)
@@ -458,7 +458,8 @@ class SyncRepository @Inject constructor(
 
     private val descDateFormat = SimpleDateFormat("d MMM HH:mm", Locale.getDefault())
     private fun describeFeeding(ms: Long) = "Feeding • ${descDateFormat.format(Date(ms))}"
-    private fun describeNappy(type: String, ms: Long) = "Nappy ($type) • ${descDateFormat.format(Date(ms))}"
+    private fun describeNappy(weeAmount: String, pooAmount: String, ms: Long) =
+        "Nappy (wee: $weeAmount, poo: $pooAmount) • ${descDateFormat.format(Date(ms))}"
     private fun describeMilestone(title: String, ms: Long) = "Milestone \"$title\" • ${descDateFormat.format(Date(ms))}"
     private fun describeGrowth(ms: Long) = "Growth • ${descDateFormat.format(Date(ms))}"
 

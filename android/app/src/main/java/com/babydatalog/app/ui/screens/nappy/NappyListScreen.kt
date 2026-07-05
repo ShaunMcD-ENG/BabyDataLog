@@ -42,8 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.database.entity.NappyChange
-import com.babydatalog.app.data.database.entity.NappyType
 import com.babydatalog.app.ui.components.ConfirmDeleteDialog
 import com.babydatalog.app.ui.components.EmptyStateMessage
 import com.babydatalog.app.utils.toDisplayDateTime
@@ -282,31 +282,22 @@ private fun NappyListItem(
             )
             Spacer(modifier = Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(
-                    selected = true,
-                    onClick = {},
-                    label = {
-                        Text(
-                            when (nappy.type) {
-                                NappyType.PEE -> "Pee"
-                                NappyType.POO -> "Poo"
-                                NappyType.BOTH -> "Pee + Poo"
-                            }
-                        )
-                    }
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                FilterChip(
-                    selected = false,
-                    onClick = {},
-                    label = {
-                        Text(
-                            nappy.amount.name.lowercase()
-                                .replaceFirstChar { it.uppercase() }
-                        )
-                    }
-                )
-                if (nappy.pooColour != null && nappy.type != NappyType.PEE) {
+                if (nappy.weeAmount != NappyAmount.NONE) {
+                    FilterChip(
+                        selected = true,
+                        onClick = {},
+                        label = { Text("Wee: ${nappy.weeAmount.displayLabel()}") }
+                    )
+                }
+                if (nappy.pooAmount != NappyAmount.NONE) {
+                    if (nappy.weeAmount != NappyAmount.NONE) Spacer(modifier = Modifier.width(8.dp))
+                    FilterChip(
+                        selected = false,
+                        onClick = {},
+                        label = { Text("Poo: ${nappy.pooAmount.displayLabel()}") }
+                    )
+                }
+                if (nappy.pooColour != null && nappy.pooAmount != NappyAmount.NONE) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = nappy.pooColour.name.lowercase().replace('_', ' ')

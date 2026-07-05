@@ -9,7 +9,6 @@ import com.babydatalog.app.data.database.entity.Milestone
 import com.babydatalog.app.data.database.entity.MilestoneCategory
 import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.database.entity.NappyChange
-import com.babydatalog.app.data.database.entity.NappyType
 import com.babydatalog.app.data.database.entity.PooColour
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -76,8 +75,8 @@ class ExportImportTest {
                 syncUuid = UUID.randomUUID().toString(),
                 babyId = 1L,
                 timestampMs = now,
-                type = NappyType.POO,
-                amount = NappyAmount.SMALL,
+                weeAmount = NappyAmount.NONE,
+                pooAmount = NappyAmount.SMALL,
                 pooColour = PooColour.YELLOW_SEEDY,
                 notes = "Normal",
                 createdAtMs = now
@@ -103,14 +102,14 @@ class ExportImportTest {
 
     @Test
     fun exportToJson_returnsNonEmptyStringWithSchemaVersion() = runTest {
-        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones)
+        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones, emptyList())
         assertTrue("JSON should be non-empty", json.isNotEmpty())
         assertTrue("JSON should contain schemaVersion", json.contains("schemaVersion"))
     }
 
     @Test
     fun exportToJson_containsExpectedBabyName() = runTest {
-        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones)
+        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones, emptyList())
         assertTrue("JSON should contain baby name", json.contains("Alice"))
     }
 
@@ -118,30 +117,31 @@ class ExportImportTest {
 
     @Test
     fun importFromJson_roundTrip_schemaVersionIsOne() = runTest {
-        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones)
+        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones, emptyList())
         val exportData = importFromJson(json)
         assertEquals(1, exportData.schemaVersion)
     }
 
     @Test
     fun importFromJson_roundTrip_feedingSessionCountMatches() = runTest {
-        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones)
+        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones, emptyList())
         val exportData = importFromJson(json)
         assertEquals(sampleFeedings.size, exportData.feedingSessions.size)
     }
 
     @Test
-    fun importFromJson_roundTrip_nappyTypeStoredAsString() = runTest {
-        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones)
+    fun importFromJson_roundTrip_nappyAmountsStoredAsStrings() = runTest {
+        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones, emptyList())
         val exportData = importFromJson(json)
-        assertEquals("POO", exportData.nappyChanges[0].type)
+        assertEquals("NONE", exportData.nappyChanges[0].weeAmount)
+        assertEquals("SMALL", exportData.nappyChanges[0].pooAmount)
     }
 
     // ─── CSV export ──────────────────────────────────────────────────────────
 
     @Test
     fun exportToCsv_containsExpectedCsvKeys() = runTest {
-        val csvMap = exportToCsv(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones)
+        val csvMap = exportToCsv(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones, emptyList())
         assertTrue("Should contain babies.csv", csvMap.containsKey("babies.csv"))
         assertTrue("Should contain feedings.csv", csvMap.containsKey("feedings.csv"))
         assertTrue("Should contain nappies.csv", csvMap.containsKey("nappies.csv"))
@@ -150,11 +150,11 @@ class ExportImportTest {
 
     @Test
     fun exportToCsv_feedingsCsvStartsWithExpectedHeader() = runTest {
-        val csvMap = exportToCsv(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones)
+        val csvMap = exportToCsv(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones, emptyList())
         val feedingsCsv = csvMap["feedings.csv"] ?: ""
         assertTrue(
-            "feedings.csv should start with 'id,date,time,'",
-            feedingsCsv.startsWith("id,date,time,")
+            "feedings.csv should start with 'id,babyId,date,time,'",
+            feedingsCsv.startsWith("id,babyId,date,time,")
         )
     }
 
@@ -186,7 +186,7 @@ class ExportImportTest {
 
     @Test
     fun importFromJson_roundTrip_babyNamePreserved() = runTest {
-        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones)
+        val json = exportToJson(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones, emptyList())
         val exportData = importFromJson(json)
         assertNotNull(exportData.babies.firstOrNull())
         assertEquals("Alice", exportData.babies[0].name)
@@ -194,7 +194,7 @@ class ExportImportTest {
 
     @Test
     fun exportToCsv_babiesCsvIsNotEmpty() = runTest {
-        val csvMap = exportToCsv(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones)
+        val csvMap = exportToCsv(sampleBabies, sampleFeedings, sampleNappies, sampleMilestones, emptyList())
         val babiesCsv = csvMap["babies.csv"] ?: ""
         assertTrue("babies.csv should not be empty", babiesCsv.isNotEmpty())
     }

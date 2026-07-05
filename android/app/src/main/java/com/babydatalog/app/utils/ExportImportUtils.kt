@@ -10,7 +10,6 @@ import com.babydatalog.app.data.database.entity.Milestone
 import com.babydatalog.app.data.database.entity.MilestoneCategory
 import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.database.entity.NappyChange
-import com.babydatalog.app.data.database.entity.NappyType
 import com.babydatalog.app.data.database.entity.PooColour
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -58,8 +57,8 @@ data class NappyExport(
     val syncUuid: String,
     val babyId: Long,
     val timestampMs: Long,
-    val type: String,
-    val amount: String,
+    val weeAmount: String,
+    val pooAmount: String,
     val pooColour: String?,
     val notes: String?,
     val createdAtMs: Long
@@ -160,8 +159,8 @@ fun NappyChange.toExport(): NappyExport = NappyExport(
     syncUuid = syncUuid,
     babyId = babyId,
     timestampMs = timestampMs,
-    type = type.name,
-    amount = amount.name,
+    weeAmount = weeAmount.name,
+    pooAmount = pooAmount.name,
     pooColour = pooColour?.name,
     notes = notes,
     createdAtMs = createdAtMs
@@ -172,8 +171,8 @@ fun NappyExport.toEntity(): NappyChange = NappyChange(
     syncUuid = syncUuid,
     babyId = babyId,
     timestampMs = timestampMs,
-    type = NappyType.valueOf(type),
-    amount = NappyAmount.valueOf(amount),
+    weeAmount = NappyAmount.valueOf(weeAmount),
+    pooAmount = NappyAmount.valueOf(pooAmount),
     pooColour = pooColour?.let { PooColour.valueOf(it) },
     notes = notes,
     createdAtMs = createdAtMs
@@ -333,15 +332,15 @@ suspend fun exportToCsv(
 
     // nappies.csv
     result["nappies.csv"] = buildString {
-        appendLine("id,babyId,date,time,type,amount,pooColour,notes")
+        appendLine("id,babyId,date,time,weeAmount,pooAmount,pooColour,notes")
         nappies.forEach { n ->
             appendLine(
                 "${n.id}," +
                 "${n.babyId}," +
                 "${n.timestampMs.toIsoDate()}," +
                 "${n.timestampMs.toIsoTime()}," +
-                "${n.type.name}," +
-                "${n.amount.name}," +
+                "${n.weeAmount.name}," +
+                "${n.pooAmount.name}," +
                 "${n.pooColour?.name ?: ""}," +
                 escapeCsv(n.notes)
             )

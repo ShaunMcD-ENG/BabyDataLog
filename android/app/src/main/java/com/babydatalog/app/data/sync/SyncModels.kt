@@ -10,7 +10,6 @@ import com.babydatalog.app.data.database.entity.Milestone
 import com.babydatalog.app.data.database.entity.MilestoneCategory
 import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.database.entity.NappyChange
-import com.babydatalog.app.data.database.entity.NappyType
 import com.babydatalog.app.data.database.entity.PooColour
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -76,7 +75,7 @@ data class SyncFeeding(
 @Serializable
 data class SyncNappy(
     val id: Long, val syncUuid: String, val babyId: Long,
-    val timestampMs: Long, val type: String, val amount: String,
+    val timestampMs: Long, val weeAmount: String, val pooAmount: String,
     val pooColour: String?, val notes: String?,
     val createdAtMs: Long, val updatedAtMs: Long,
     val deletedAtMs: Long? = null,
@@ -114,7 +113,7 @@ fun FeedingSession.toSync() = SyncFeeding(
 )
 
 fun NappyChange.toSync() = SyncNappy(
-    id, syncUuid, babyId, timestampMs, type.name, amount.name,
+    id, syncUuid, babyId, timestampMs, weeAmount.name, pooAmount.name,
     pooColour?.name, notes, createdAtMs, updatedAtMs, deletedAtMs
 )
 
@@ -143,8 +142,8 @@ fun SyncFeeding.toEntity() = FeedingSession(
 
 fun SyncNappy.toEntity() = NappyChange(
     id, syncUuid, babyId, timestampMs,
-    NappyType.valueOf(type),
-    NappyAmount.valueOf(amount),
+    NappyAmount.valueOf(weeAmount),
+    NappyAmount.valueOf(pooAmount),
     pooColour?.let { PooColour.valueOf(it) },
     notes, createdAtMs, updatedAtMs, deletedAtMs
 )

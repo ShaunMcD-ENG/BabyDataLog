@@ -41,6 +41,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.babydatalog.app.data.database.entity.Baby
 import com.babydatalog.app.ui.components.BabySelector
+import com.babydatalog.app.ui.screens.nappy.contentsSummary
 import com.babydatalog.app.utils.formatDuration
 import com.babydatalog.app.utils.toRelativeTime
 import com.babydatalog.app.viewmodel.GrowthViewModel
@@ -289,8 +290,7 @@ fun HomeScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = nappy.type.name.lowercase()
-                                        .replaceFirstChar { it.uppercase() },
+                                    text = nappy.contentsSummary(),
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.Medium
                                 )

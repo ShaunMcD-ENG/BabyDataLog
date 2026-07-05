@@ -57,8 +57,8 @@ export function runMigrations() {
       syncUuid    TEXT    NOT NULL UNIQUE,
       babyId      INTEGER NOT NULL REFERENCES babies(id) ON DELETE CASCADE,
       timestampMs INTEGER NOT NULL,
-      type        TEXT    NOT NULL,
-      amount      TEXT    NOT NULL,
+      weeAmount   TEXT    NOT NULL DEFAULT 'NONE',
+      pooAmount   TEXT    NOT NULL DEFAULT 'NONE',
       pooColour   TEXT,
       notes       TEXT,
       createdAtMs INTEGER NOT NULL,
@@ -162,6 +162,47 @@ export function runMigrations() {
     if (!cols.some((c) => c.name === "deletedAtMs")) {
       db.prepare(`ALTER TABLE ${table} ADD COLUMN deletedAtMs INTEGER`).run();
     }
+  }
+
+  // One-time migration: split nappy_changes' single `type` (PEE/POO/BOTH) +
+  // `amount` pair into independent weeAmount/pooAmount columns. Rebuilds the
+  // table (SQLite can't drop the old NOT NULL columns in place) so a PEE-only
+  // row becomes pooAmount='NONE' and vice versa, and BOTH copies its one
+  // recorded amount into both new columns.
+  const nappyCols = db.prepare(`PRAGMA table_info(nappy_changes)`).all() as { name: string }[];
+  if (nappyCols.some((c) => c.name === "type")) {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE nappy_changes_new (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          syncUuid    TEXT    NOT NULL UNIQUE,
+          babyId      INTEGER NOT NULL REFERENCES babies(id) ON DELETE CASCADE,
+          timestampMs INTEGER NOT NULL,
+          weeAmount   TEXT    NOT NULL DEFAULT 'NONE',
+          pooAmount   TEXT    NOT NULL DEFAULT 'NONE',
+          pooColour   TEXT,
+          notes       TEXT,
+          createdAtMs INTEGER NOT NULL,
+          updatedAtMs INTEGER NOT NULL DEFAULT 0,
+          deletedAtMs INTEGER
+        );
+
+        INSERT INTO nappy_changes_new
+          (id, syncUuid, babyId, timestampMs, weeAmount, pooAmount, pooColour, notes, createdAtMs, updatedAtMs, deletedAtMs)
+        SELECT
+          id, syncUuid, babyId, timestampMs,
+          CASE WHEN type = 'POO' THEN 'NONE' ELSE amount END,
+          CASE WHEN type = 'PEE' THEN 'NONE' ELSE amount END,
+          pooColour, notes, createdAtMs, updatedAtMs, deletedAtMs
+        FROM nappy_changes;
+
+        DROP TABLE nappy_changes;
+        ALTER TABLE nappy_changes_new RENAME TO nappy_changes;
+
+        CREATE INDEX IF NOT EXISTS idx_nappies_babyId ON nappy_changes(babyId);
+        CREATE INDEX IF NOT EXISTS idx_nappies_updatedAt ON nappy_changes(updatedAtMs);
+      `);
+    })();
   }
 
   // One-time migration: re-derive baby syncUuids from name+birthdate to match

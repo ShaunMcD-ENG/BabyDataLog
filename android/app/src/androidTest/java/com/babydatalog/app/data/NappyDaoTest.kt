@@ -10,7 +10,6 @@ import com.babydatalog.app.data.database.dao.NappyDao
 import com.babydatalog.app.data.database.entity.Baby
 import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.database.entity.NappyChange
-import com.babydatalog.app.data.database.entity.NappyType
 import com.babydatalog.app.data.database.entity.PooColour
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -55,14 +54,19 @@ class NappyDaoTest {
         createdAtMs = System.currentTimeMillis()
     )
 
-    private fun testNappy(babyId: Long, type: NappyType = NappyType.POO, timestampMs: Long = System.currentTimeMillis()): NappyChange =
+    private fun testNappy(
+        babyId: Long,
+        weeAmount: NappyAmount = NappyAmount.NONE,
+        pooAmount: NappyAmount = NappyAmount.SMALL,
+        timestampMs: Long = System.currentTimeMillis()
+    ): NappyChange =
         NappyChange(
             syncUuid = UUID.randomUUID().toString(),
             babyId = babyId,
             timestampMs = timestampMs,
-            type = type,
-            amount = NappyAmount.SMALL,
-            pooColour = if (type != NappyType.PEE) PooColour.YELLOW_SEEDY else null,
+            weeAmount = weeAmount,
+            pooAmount = pooAmount,
+            pooColour = if (pooAmount != NappyAmount.NONE) PooColour.YELLOW_SEEDY else null,
             notes = null,
             createdAtMs = System.currentTimeMillis()
         )
@@ -72,34 +76,13 @@ class NappyDaoTest {
     @Test
     fun insertAndRetrieveNappy() = runTest {
         val babyId = babyDao.insertBaby(testBaby())
-        val nappy = testNappy(babyId, type = NappyType.POO)
+        val nappy = testNappy(babyId, pooAmount = NappyAmount.SMALL)
         nappyDao.insertNappy(nappy)
 
         val nappies = nappyDao.getNappiesForBaby(babyId).first()
         assertEquals(1, nappies.size)
-        assertEquals(NappyType.POO, nappies[0].type)
-        assertEquals(NappyAmount.SMALL, nappies[0].amount)
-    }
-
-    @Test
-    fun getNappyCountByType_countsCorrectly() = runTest {
-        val babyId = babyDao.insertBaby(testBaby())
-        val now = System.currentTimeMillis()
-
-        // Insert 2 POO and 1 PEE
-        nappyDao.insertNappy(testNappy(babyId, NappyType.POO, now - 3_600_000L))
-        nappyDao.insertNappy(testNappy(babyId, NappyType.POO, now - 1_800_000L))
-        nappyDao.insertNappy(testNappy(babyId, NappyType.PEE, now - 900_000L))
-
-        // getNappyCountByType uses < for endMs so use now + 1 to include the latest entry
-        val pooCount = nappyDao.getNappyCountByType(
-            babyId = babyId,
-            startMs = now - 86_400_000L,
-            endMs = now + 1L,
-            type = NappyType.POO
-        ).first()
-
-        assertEquals(2, pooCount)
+        assertEquals(NappyAmount.NONE, nappies[0].weeAmount)
+        assertEquals(NappyAmount.SMALL, nappies[0].pooAmount)
     }
 
     @Test
@@ -107,15 +90,15 @@ class NappyDaoTest {
         val babyId = babyDao.insertBaby(testBaby())
         val now = System.currentTimeMillis()
 
-        val olderNappy = testNappy(babyId, NappyType.PEE,  timestampMs = now - 7_200_000L)
-        val newerNappy = testNappy(babyId, NappyType.POO, timestampMs = now - 600_000L)
+        val olderNappy = testNappy(babyId, weeAmount = NappyAmount.SMALL, pooAmount = NappyAmount.NONE, timestampMs = now - 7_200_000L)
+        val newerNappy = testNappy(babyId, weeAmount = NappyAmount.NONE, pooAmount = NappyAmount.LARGE, timestampMs = now - 600_000L)
 
         nappyDao.insertNappy(olderNappy)
         nappyDao.insertNappy(newerNappy)
 
         val last = nappyDao.getLastNappy(babyId).first()
         assertNotNull(last)
-        assertEquals(NappyType.POO, last!!.type)
+        assertEquals(NappyAmount.LARGE, last!!.pooAmount)
         assertEquals(now - 600_000L, last.timestampMs)
     }
 
@@ -136,9 +119,9 @@ class NappyDaoTest {
         val babyId = babyDao.insertBaby(testBaby())
         val now = System.currentTimeMillis()
 
-        nappyDao.insertNappy(testNappy(babyId, NappyType.POO,  timestampMs = now - 3_600_000L))
-        nappyDao.insertNappy(testNappy(babyId, NappyType.PEE,  timestampMs = now - 1_800_000L))
-        nappyDao.insertNappy(testNappy(babyId, NappyType.BOTH, timestampMs = now - 900_000L))
+        nappyDao.insertNappy(testNappy(babyId, weeAmount = NappyAmount.NONE, pooAmount = NappyAmount.SMALL, timestampMs = now - 3_600_000L))
+        nappyDao.insertNappy(testNappy(babyId, weeAmount = NappyAmount.SMALL, pooAmount = NappyAmount.NONE, timestampMs = now - 1_800_000L))
+        nappyDao.insertNappy(testNappy(babyId, weeAmount = NappyAmount.MEDIUM, pooAmount = NappyAmount.LARGE, timestampMs = now - 900_000L))
 
         val nappies = nappyDao.getNappiesForBaby(babyId).first()
         assertEquals(3, nappies.size)

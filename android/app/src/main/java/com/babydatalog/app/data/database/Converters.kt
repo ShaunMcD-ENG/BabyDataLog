@@ -6,7 +6,6 @@ import com.babydatalog.app.data.database.entity.BreastSide
 import com.babydatalog.app.data.database.entity.LatchQuality
 import com.babydatalog.app.data.database.entity.MilestoneCategory
 import com.babydatalog.app.data.database.entity.NappyAmount
-import com.babydatalog.app.data.database.entity.NappyType
 import com.babydatalog.app.data.database.entity.PooColour
 
 class Converters {
@@ -31,13 +30,6 @@ class Converters {
 
     @TypeConverter
     fun toLatchQuality(value: String?): LatchQuality? = value?.let { LatchQuality.valueOf(it) }
-
-    // NappyType
-    @TypeConverter
-    fun fromNappyType(value: NappyType): String = value.name
-
-    @TypeConverter
-    fun toNappyType(value: String): NappyType = NappyType.valueOf(value)
 
     // NappyAmount
     @TypeConverter

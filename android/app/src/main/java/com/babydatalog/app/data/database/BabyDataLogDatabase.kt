@@ -26,7 +26,7 @@ import com.babydatalog.app.data.database.entity.NappyChange
         Milestone::class,
         GrowthMeasurement::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -122,6 +122,50 @@ abstract class BabyDataLogDatabase : RoomDatabase() {
                         arrayOf(uuid, ts, id)
                     )
                 }
+            }
+        }
+
+        // Split the single type+amount pair into independent wee/poo amounts so a
+        // nappy with both contents can record different quantities for each.
+        // The table is rebuilt (rather than ALTER TABLE ... DROP COLUMN) because
+        // the bundled SQLite on minSdk 26 devices predates DROP COLUMN support.
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `nappy_changes_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `syncUuid` TEXT NOT NULL,
+                        `babyId` INTEGER NOT NULL,
+                        `timestampMs` INTEGER NOT NULL,
+                        `weeAmount` TEXT NOT NULL,
+                        `pooAmount` TEXT NOT NULL,
+                        `pooColour` TEXT,
+                        `notes` TEXT,
+                        `createdAtMs` INTEGER NOT NULL,
+                        `updatedAtMs` INTEGER NOT NULL,
+                        `deletedAtMs` INTEGER,
+                        FOREIGN KEY(`babyId`) REFERENCES `babies`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    """
+                    INSERT INTO `nappy_changes_new`
+                        (id, syncUuid, babyId, timestampMs, weeAmount, pooAmount, pooColour, notes, createdAtMs, updatedAtMs, deletedAtMs)
+                    SELECT
+                        id, syncUuid, babyId, timestampMs,
+                        CASE WHEN type = 'POO' THEN 'NONE' ELSE amount END,
+                        CASE WHEN type = 'PEE' THEN 'NONE' ELSE amount END,
+                        pooColour, notes, createdAtMs, updatedAtMs, deletedAtMs
+                    FROM `nappy_changes`
+                    """.trimIndent()
+                )
+                database.execSQL("DROP TABLE `nappy_changes`")
+                database.execSQL("ALTER TABLE `nappy_changes_new` RENAME TO `nappy_changes`")
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_nappy_changes_babyId` ON `nappy_changes` (`babyId`)"
+                )
             }
         }
     }

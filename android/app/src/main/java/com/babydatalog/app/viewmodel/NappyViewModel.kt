@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.database.entity.NappyChange
-import com.babydatalog.app.data.database.entity.NappyType
 import com.babydatalog.app.data.database.entity.PooColour
 import com.babydatalog.app.data.repository.NappyRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -30,8 +29,8 @@ data class NappyFormState(
     val syncUuid: String = "",
     val babyId: Long = 0L,
     val timestampMs: Long = System.currentTimeMillis(),
-    val type: NappyType = NappyType.PEE,
-    val amount: NappyAmount = NappyAmount.SMALL,
+    val weeAmount: NappyAmount = NappyAmount.NONE,
+    val pooAmount: NappyAmount = NappyAmount.NONE,
     val pooColour: PooColour? = null,
     val notes: String = "",
     val createdAtMs: Long = 0L,
@@ -61,22 +60,10 @@ class NappyViewModel @Inject constructor(
                     NappySortOrder.NEWEST_FIRST -> list.sortedByDescending { it.timestampMs }
                     NappySortOrder.OLDEST_FIRST -> list.sortedBy { it.timestampMs }
                     NappySortOrder.POO_FIRST -> list.sortedWith(
-                        compareBy { nappy ->
-                            when (nappy.type) {
-                                NappyType.POO -> 0
-                                NappyType.BOTH -> 1
-                                NappyType.PEE -> 2
-                            }
-                        }
+                        compareBy { nappy -> if (nappy.pooAmount != NappyAmount.NONE) 0 else 1 }
                     )
                     NappySortOrder.PEE_FIRST -> list.sortedWith(
-                        compareBy { nappy ->
-                            when (nappy.type) {
-                                NappyType.PEE -> 0
-                                NappyType.BOTH -> 1
-                                NappyType.POO -> 2
-                            }
-                        }
+                        compareBy { nappy -> if (nappy.weeAmount != NappyAmount.NONE) 0 else 1 }
                     )
                 }
             }
@@ -104,8 +91,8 @@ class NappyViewModel @Inject constructor(
                     syncUuid = nappy.syncUuid,
                     babyId = nappy.babyId,
                     timestampMs = nappy.timestampMs,
-                    type = nappy.type,
-                    amount = nappy.amount,
+                    weeAmount = nappy.weeAmount,
+                    pooAmount = nappy.pooAmount,
                     pooColour = nappy.pooColour,
                     notes = nappy.notes ?: "",
                     createdAtMs = nappy.createdAtMs,
@@ -117,17 +104,17 @@ class NappyViewModel @Inject constructor(
         }
     }
 
-    fun updateType(type: NappyType) {
-        _formState.update {
-            it.copy(
-                type = type,
-                pooColour = if (type == NappyType.PEE) null else it.pooColour
-            )
-        }
+    fun updateWeeAmount(amount: NappyAmount) {
+        _formState.update { it.copy(weeAmount = amount) }
     }
 
-    fun updateAmount(amount: NappyAmount) {
-        _formState.update { it.copy(amount = amount) }
+    fun updatePooAmount(amount: NappyAmount) {
+        _formState.update {
+            it.copy(
+                pooAmount = amount,
+                pooColour = if (amount == NappyAmount.NONE) null else it.pooColour
+            )
+        }
     }
 
     fun updatePooColour(colour: PooColour?) {
@@ -145,6 +132,11 @@ class NappyViewModel @Inject constructor(
     fun saveNappy() {
         val state = _formState.value
 
+        if (state.weeAmount == NappyAmount.NONE && state.pooAmount == NappyAmount.NONE) {
+            _formState.update { it.copy(error = "Select an amount for wee or poo") }
+            return
+        }
+
         _formState.update { it.copy(isSaving = true, error = null) }
 
         viewModelScope.launch {
@@ -154,8 +146,8 @@ class NappyViewModel @Inject constructor(
                     syncUuid = state.syncUuid,
                     babyId = state.babyId,
                     timestampMs = state.timestampMs,
-                    type = state.type,
-                    amount = state.amount,
+                    weeAmount = state.weeAmount,
+                    pooAmount = state.pooAmount,
                     pooColour = state.pooColour,
                     notes = state.notes.ifBlank { null },
                     createdAtMs = if (state.id == 0L) System.currentTimeMillis() else state.createdAtMs
