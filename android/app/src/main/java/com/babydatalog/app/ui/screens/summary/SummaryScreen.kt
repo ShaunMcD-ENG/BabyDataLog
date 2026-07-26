@@ -218,40 +218,39 @@ private fun WeightGrowthCard(weightStats: WeightGrowthStats) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                return@Column
-            }
+            } else {
+                StatRow(label = "Net Change (7 Days)", value = formatSignedGrams(weightStats.netChangeLastWeekGrams))
+                StatRow(label = "Net Change (30 Days)", value = formatSignedGrams(weightStats.netChangeLastMonthGrams))
 
-            StatRow(label = "Net Change (7 Days)", value = formatSignedGrams(weightStats.netChangeLastWeekGrams))
-            StatRow(label = "Net Change (30 Days)", value = formatSignedGrams(weightStats.netChangeLastMonthGrams))
-
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Weekly Breakdown",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            weightStats.weeklyStats.forEach { period ->
-                StatRow(
-                    label = period.label,
-                    value = "${formatSignedGrams(period.netChangeGrams)} (${formatPerDay(period.avgPerDayGrams)})"
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Weekly Breakdown",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
+                weightStats.weeklyStats.forEach { period ->
+                    StatRow(
+                        label = period.label,
+                        value = "${formatSignedGrams(period.netChangeGrams)} (${formatPerDay(period.avgPerDayGrams)})"
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Monthly Breakdown",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            weightStats.monthlyStats.forEach { period ->
-                StatRow(
-                    label = period.label,
-                    value = "${formatSignedGrams(period.netChangeGrams)} (${formatPerDay(period.avgPerDayGrams)})"
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Monthly Breakdown",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
+                weightStats.monthlyStats.forEach { period ->
+                    StatRow(
+                        label = period.label,
+                        value = "${formatSignedGrams(period.netChangeGrams)} (${formatPerDay(period.avgPerDayGrams)})"
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(12.dp))
-            StatRow(label = "All-Time Avg", value = formatPerDay(weightStats.avgPerDayAllTimeGrams))
+                Spacer(modifier = Modifier.height(12.dp))
+                StatRow(label = "All-Time Avg", value = formatPerDay(weightStats.avgPerDayAllTimeGrams))
+            }
         }
     }
 }
