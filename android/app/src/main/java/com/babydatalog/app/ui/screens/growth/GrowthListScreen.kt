@@ -46,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.babydatalog.app.data.database.entity.GrowthMeasurement
 import com.babydatalog.app.ui.components.ConfirmDeleteDialog
 import com.babydatalog.app.ui.components.EmptyStateMessage
+import com.babydatalog.app.utils.WeightGrowthStats
 import com.babydatalog.app.utils.toDisplayDateTime
 import com.babydatalog.app.viewmodel.GrowthSortOrder
 import com.babydatalog.app.viewmodel.GrowthViewModel
@@ -78,6 +79,7 @@ fun GrowthListScreen(
 ) {
     val measurements by viewModel.measurements.collectAsStateWithLifecycle()
     val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
+    val weightStats by viewModel.weightStats.collectAsStateWithLifecycle()
     var pendingDelete by remember { mutableStateOf<GrowthMeasurement?>(null) }
 
     if (pendingDelete != null) {
@@ -117,6 +119,8 @@ fun GrowthListScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     // Mini line chart — weight over last 10 measurements
                     GrowthWeightChart(measurements = measurements)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    AverageDailyGrowthCard(weightStats)
                     Spacer(modifier = Modifier.height(8.dp))
                     // Sort dropdown
                     GrowthSortDropdown(
@@ -275,6 +279,48 @@ private fun GrowthWeightChart(measurements: List<GrowthMeasurement>) {
                 )
             }
         }
+    }
+}
+
+private fun formatPerDay(gramsPerDay: Float?): String {
+    if (gramsPerDay == null) return "N/A"
+    val sign = if (gramsPerDay > 0) "+" else ""
+    return "$sign%.1fg/day".format(gramsPerDay)
+}
+
+@Composable
+private fun AverageDailyGrowthCard(weightStats: WeightGrowthStats) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "Average Daily Growth",
+                style = MaterialTheme.typography.titleSmall
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                GrowthStatColumn(label = "Last Week", value = formatPerDay(weightStats.avgPerDayLastWeekGrams))
+                GrowthStatColumn(label = "Last Month", value = formatPerDay(weightStats.avgPerDayLastMonthGrams))
+                GrowthStatColumn(label = "Last 3 Months", value = formatPerDay(weightStats.avgPerDayLast3MonthsGrams))
+            }
+        }
+    }
+}
+
+@Composable
+private fun GrowthStatColumn(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleSmall
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

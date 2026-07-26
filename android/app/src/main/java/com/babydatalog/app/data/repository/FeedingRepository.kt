@@ -49,9 +49,11 @@ class FeedingRepository @Inject constructor(
         syncScheduler.requestSyncSoon()
     }
 
-    suspend fun upsertFeeding(feeding: FeedingSession) {
+    // Returns the persisted entity (with its real id/syncUuid populated) so callers like
+    // feeding-timer autosave can adopt the same row on subsequent writes instead of inserting duplicates.
+    suspend fun upsertFeeding(feeding: FeedingSession): FeedingSession {
         val now = System.currentTimeMillis()
-        if (feeding.id == 0L) {
+        val saved = if (feeding.id == 0L) {
             val syncUuid = if (feeding.syncUuid.isBlank()) {
                 val babySyncUuid = babyDao.getBabyByIdOnce(feeding.babyId)?.syncUuid
                 if (babySyncUuid != null) {
@@ -62,11 +64,16 @@ class FeedingRepository @Inject constructor(
             } else {
                 feeding.syncUuid
             }
-            feedingDao.insertFeeding(feeding.copy(syncUuid = syncUuid, updatedAtMs = now))
+            val toInsert = feeding.copy(syncUuid = syncUuid, updatedAtMs = now)
+            val newId = feedingDao.insertFeeding(toInsert)
+            toInsert.copy(id = newId)
         } else {
-            feedingDao.updateFeeding(feeding.copy(updatedAtMs = now))
+            val toUpdate = feeding.copy(updatedAtMs = now)
+            feedingDao.updateFeeding(toUpdate)
+            toUpdate
         }
         syncScheduler.requestSyncSoon()
+        return saved
     }
 
     suspend fun calculateAndSaveDuration(feeding: FeedingSession): FeedingSession {

@@ -6,13 +6,17 @@ import com.babydatalog.app.data.database.entity.BabyState
 import com.babydatalog.app.data.database.entity.BreastSide
 import com.babydatalog.app.data.database.entity.FeedingSession
 import com.babydatalog.app.data.database.entity.LatchQuality
+import com.babydatalog.app.data.prefs.AppPreferences
 import com.babydatalog.app.data.repository.FeedingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
@@ -49,7 +53,8 @@ data class FeedingFormState(
 
 @HiltViewModel
 class FeedingViewModel @Inject constructor(
-    private val feedingRepository: FeedingRepository
+    private val feedingRepository: FeedingRepository,
+    private val appPreferences: AppPreferences
 ) : ViewModel() {
 
     // babyId is now injected via a StateFlow<Long?> passed from BabyViewModel
@@ -60,6 +65,28 @@ class FeedingViewModel @Inject constructor(
 
     private val _formState = MutableStateFlow(FeedingFormState())
     val formState: StateFlow<FeedingFormState> = _formState.asStateFlow()
+
+    init {
+        // Auto-save safety net: while the timer is actively running, periodically persist
+        // at least the start time (and whatever else is filled in) so a forgotten save
+        // doesn't lose the feeding entirely — only the exact end time/notes would need
+        // reconstructing from memory. Never touches endTimeMs/durationMinutes/isTimerRunning,
+        // so it can't interrupt the running timer or clobber unsaved edits.
+        viewModelScope.launch {
+            combine(
+                _formState.map { it.isTimerRunning }.distinctUntilChanged(),
+                appPreferences.autoSaveIntervalMinutes
+            ) { running, intervalMinutes -> running to intervalMinutes }
+                .collectLatest { (running, intervalMinutes) ->
+                    if (running && intervalMinutes > 0) {
+                        while (true) {
+                            delay(intervalMinutes * 60_000L)
+                            autoSaveSilently()
+                        }
+                    }
+                }
+        }
+    }
 
     val feedings: StateFlow<List<FeedingSession>> = combine(_activeBabyId, _sortOrder) { id, sort -> id to sort }
         .flatMapLatest { (id, sort) ->
@@ -242,6 +269,43 @@ class FeedingViewModel @Inject constructor(
                 _formState.update {
                     it.copy(isSaving = false, error = e.message ?: "Failed to save feeding")
                 }
+            }
+        }
+    }
+
+    // Silent background persist — does not touch isSaving/saveSuccess/error so it can't
+    // trigger the UI's "navigate back on success" effect or interrupt anything the user is doing.
+    private fun autoSaveSilently() {
+        val state = _formState.value
+        if (state.babyId == 0L) return
+
+        viewModelScope.launch {
+            try {
+                val feeding = FeedingSession(
+                    id = state.id,
+                    syncUuid = state.syncUuid,
+                    babyId = state.babyId,
+                    startTimeMs = state.startTimeMs,
+                    endTimeMs = null,
+                    durationMinutes = null,
+                    breastSide = state.breastSide,
+                    babyState = state.babyState,
+                    latchQuality = state.latchQuality,
+                    notes = state.notes.ifBlank { null },
+                    createdAtMs = if (state.id == 0L) System.currentTimeMillis() else state.createdAtMs
+                )
+                val saved = feedingRepository.upsertFeeding(feeding)
+                // Adopt the generated id/syncUuid so later autosaves (and the eventual real
+                // save) update this same row instead of inserting a duplicate.
+                if (state.id == 0L) {
+                    _formState.update {
+                        if (it.id == 0L) it.copy(id = saved.id, syncUuid = saved.syncUuid, createdAtMs = saved.createdAtMs)
+                        else it
+                    }
+                }
+            } catch (_: Exception) {
+                // Best-effort background save — surfacing an error here would be more
+                // disruptive than just trying again on the next interval.
             }
         }
     }

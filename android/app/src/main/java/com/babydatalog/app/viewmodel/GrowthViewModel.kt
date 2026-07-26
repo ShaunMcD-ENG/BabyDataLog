@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.babydatalog.app.data.database.entity.GrowthMeasurement
 import com.babydatalog.app.data.repository.GrowthRepository
+import com.babydatalog.app.utils.WeightGrowthStats
+import com.babydatalog.app.utils.computeWeightGrowthStats
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -91,6 +93,10 @@ class GrowthViewModel @Inject constructor(
             else flowOf(null)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val weightStats: StateFlow<WeightGrowthStats> = measurements
+        .map { computeWeightGrowthStats(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), computeWeightGrowthStats(emptyList()))
 
     fun setActiveBabyId(id: Long) {
         if (_activeBabyId.value != id) {

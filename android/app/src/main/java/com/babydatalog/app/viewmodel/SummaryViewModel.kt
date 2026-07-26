@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.repository.FeedingRepository
+import com.babydatalog.app.data.repository.GrowthRepository
 import com.babydatalog.app.data.repository.NappyRepository
+import com.babydatalog.app.utils.WeightGrowthStats
+import com.babydatalog.app.utils.computeWeightGrowthStats
 import com.babydatalog.app.utils.monthEndMs
 import com.babydatalog.app.utils.monthStartMs
 import com.babydatalog.app.utils.todayEndMs
@@ -18,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.time.DayOfWeek
 import java.time.Instant
@@ -43,7 +47,8 @@ data class SummaryStats(
 @HiltViewModel
 class SummaryViewModel @Inject constructor(
     private val feedingRepository: FeedingRepository,
-    private val nappyRepository: NappyRepository
+    private val nappyRepository: NappyRepository,
+    private val growthRepository: GrowthRepository
 ) : ViewModel() {
 
     // babyId is now driven by BabyViewModel via NavGraph LaunchedEffect
@@ -177,6 +182,15 @@ class SummaryViewModel @Inject constructor(
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SummaryStats())
+
+    // Weight growth is computed over the baby's whole history, independent of the
+    // Today/Week/Month period selector above (it needs older records as anchors).
+    val weightStats: StateFlow<WeightGrowthStats> = _defaultBabyId
+        .flatMapLatest { babyId ->
+            if (babyId != null) growthRepository.getMeasurementsForBaby(babyId).map { computeWeightGrowthStats(it) }
+            else flowOf(computeWeightGrowthStats(emptyList()))
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), computeWeightGrowthStats(emptyList()))
 
     fun setActiveBabyId(id: Long) {
         if (_defaultBabyId.value != id) {

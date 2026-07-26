@@ -25,6 +25,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.babydatalog.app.utils.WeightGrowthStats
+import com.babydatalog.app.utils.WeightPeriodStat
 import com.babydatalog.app.utils.formatDuration
 import com.babydatalog.app.viewmodel.SummaryPeriod
 import com.babydatalog.app.viewmodel.SummaryViewModel
@@ -45,6 +47,7 @@ fun SummaryScreen(
 ) {
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val selectedPeriod by viewModel.selectedPeriod.collectAsStateWithLifecycle()
+    val weightStats by viewModel.weightStats.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -131,6 +134,9 @@ fun SummaryScreen(
                 }
             }
 
+            // Weight growth card — always whole-history based, independent of the period selector above
+            WeightGrowthCard(weightStats)
+
             // Feeding chart — title and x-axis labels change with period
             val feedingChartTitle = when (selectedPeriod) {
                 SummaryPeriod.TODAY -> "Feedings — Today by Hour"
@@ -174,6 +180,78 @@ fun SummaryScreen(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+private fun formatSignedGrams(grams: Int?): String {
+    if (grams == null) return "N/A"
+    val sign = if (grams > 0) "+" else ""
+    return "$sign${grams}g"
+}
+
+private fun formatPerDay(gramsPerDay: Float?): String {
+    if (gramsPerDay == null) return "N/A"
+    val sign = if (gramsPerDay > 0) "+" else ""
+    return "$sign%.1fg/day".format(gramsPerDay)
+}
+
+@Composable
+private fun WeightGrowthCard(weightStats: WeightGrowthStats) {
+    val hasAnyData = weightStats.netChangeLastWeekGrams != null ||
+        weightStats.netChangeLastMonthGrams != null ||
+        weightStats.avgPerDayAllTimeGrams != null
+
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Weight Growth",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (!hasAnyData) {
+                Text(
+                    text = "Not enough weight records yet — add at least two to see growth trends.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                return@Column
+            }
+
+            StatRow(label = "Net Change (7 Days)", value = formatSignedGrams(weightStats.netChangeLastWeekGrams))
+            StatRow(label = "Net Change (30 Days)", value = formatSignedGrams(weightStats.netChangeLastMonthGrams))
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Weekly Breakdown",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            weightStats.weeklyStats.forEach { period ->
+                StatRow(
+                    label = period.label,
+                    value = "${formatSignedGrams(period.netChangeGrams)} (${formatPerDay(period.avgPerDayGrams)})"
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Monthly Breakdown",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            weightStats.monthlyStats.forEach { period ->
+                StatRow(
+                    label = period.label,
+                    value = "${formatSignedGrams(period.netChangeGrams)} (${formatPerDay(period.avgPerDayGrams)})"
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            StatRow(label = "All-Time Avg", value = formatPerDay(weightStats.avgPerDayAllTimeGrams))
         }
     }
 }
