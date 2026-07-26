@@ -1,6 +1,7 @@
 package com.babydatalog.app.utils
 
 import com.babydatalog.app.data.database.entity.GrowthMeasurement
+import kotlin.math.roundToInt
 
 data class WeightPeriodStat(
     val label: String,
@@ -27,17 +28,41 @@ private fun weekLabel(i: Int): String =
 private fun monthLabel(i: Int): String =
     if (i == 0) "Last 30 Days" else "${i * 30 + 1}–${(i + 1) * 30} Days Ago"
 
+// Estimates the weight at an arbitrary instant by linearly interpolating between the two
+// real measurements that bracket it, rather than snapping to whichever actual weigh-in
+// happens to be nearest. This is what makes "Last 7 Days" change smoothly day to day instead
+// of jumping discretely whenever the boundary instant crosses a real measurement's timestamp
+// (weigh-ins are sparse and irregular, so that boundary crossing happens constantly).
 // weights must be sorted ascending by timestampMs and contain only records with a non-null weight.
+// Returns null only when targetMs falls before the very first measurement — there's nothing
+// to extrapolate backward from. Beyond the last measurement, we hold at the last known weight
+// rather than extrapolate forward (no reliable way to predict a future weigh-in).
+private fun interpolatedWeightAt(weights: List<GrowthMeasurement>, targetMs: Long): Float? {
+    val first = weights.firstOrNull() ?: return null
+    if (targetMs <= first.timestampMs) {
+        return if (targetMs == first.timestampMs) first.weightGrams!!.toFloat() else null
+    }
+    val last = weights.last()
+    if (targetMs >= last.timestampMs) return last.weightGrams!!.toFloat()
+
+    val after = weights.first { it.timestampMs >= targetMs }
+    val before = weights.last { it.timestampMs <= targetMs }
+    if (before.id == after.id) return before.weightGrams!!.toFloat()
+
+    val span = (after.timestampMs - before.timestampMs).toDouble()
+    val frac = (targetMs - before.timestampMs) / span
+    return (before.weightGrams!! + frac * (after.weightGrams!! - before.weightGrams!!)).toFloat()
+}
+
 private fun periodStat(label: String, weights: List<GrowthMeasurement>, windowStartMs: Long, windowEndMs: Long): WeightPeriodStat {
-    val startAnchor = weights.lastOrNull { it.timestampMs <= windowStartMs }
-        ?: weights.firstOrNull { it.timestampMs in windowStartMs..windowEndMs }
-    val endAnchor = weights.lastOrNull { it.timestampMs <= windowEndMs }
-    if (startAnchor == null || endAnchor == null || startAnchor.id == endAnchor.id) {
+    val startWeight = interpolatedWeightAt(weights, windowStartMs)
+    val endWeight = interpolatedWeightAt(weights, windowEndMs)
+    if (startWeight == null || endWeight == null) {
         return WeightPeriodStat(label, null, null)
     }
-    val netChange = endAnchor.weightGrams!! - startAnchor.weightGrams!!
-    val daySpan = ((endAnchor.timestampMs - startAnchor.timestampMs) / DAY_MS.toDouble()).coerceAtLeast(1.0)
-    return WeightPeriodStat(label, netChange, (netChange / daySpan).toFloat())
+    val netChange = endWeight - startWeight
+    val daySpan = (windowEndMs - windowStartMs) / DAY_MS.toDouble()
+    return WeightPeriodStat(label, netChange.roundToInt(), (netChange / daySpan).toFloat())
 }
 
 fun computeWeightGrowthStats(
