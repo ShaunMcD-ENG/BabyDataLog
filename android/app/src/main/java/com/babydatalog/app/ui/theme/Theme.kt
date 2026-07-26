@@ -82,26 +82,57 @@ private val DarkColorScheme: ColorScheme = darkColorScheme(
     inversePrimary = Amber40,
 )
 
-// Derives on/container roles for an arbitrary user-picked primary colour. Not a full
-// Material-You tonal palette (that needs the material-color-utilities algorithm) — just
-// enough contrast-safe roles to keep the rest of the app's static scheme looking coherent.
+private data class ColorRole(val color: Color, val onColor: Color, val container: Color, val onContainer: Color)
+
+// Builds one accent role (its own colour + on/container/onContainer) from an HSV triple.
+private fun deriveRole(hue: Float, saturation: Float, value: Float, darkTheme: Boolean): ColorRole {
+    val h = ((hue % 360f) + 360f) % 360f
+    val s = saturation.coerceIn(0f, 1f)
+    val v = value.coerceIn(0f, 1f)
+
+    val color = Color(android.graphics.Color.HSVToColor(floatArrayOf(h, s, v)))
+    val onColor = if (color.luminance() > 0.45f) Color.Black else Color.White
+
+    val containerValue = if (darkTheme) (v * 0.45f).coerceIn(0.1f, 1f) else 0.92f
+    val container = Color(android.graphics.Color.HSVToColor(floatArrayOf(h, (s * 0.35f).coerceIn(0f, 1f), containerValue)))
+    val onContainer = if (container.luminance() > 0.45f) Color.Black else Color.White
+
+    return ColorRole(color, onColor, container, onContainer)
+}
+
+// Derives a full primary/secondary/tertiary accent set from a single user-picked colour, so
+// every accent role used across the app (not just primary) moves together. Not a true
+// Material-You tonal palette (that needs the material-color-utilities HCT algorithm) — this
+// mirrors its "TonalSpot" scheme instead: secondary keeps the seed's hue at lower chroma,
+// tertiary rotates the hue +60° for a complementary accent. Everything else (backgrounds,
+// surfaces, error) stays on the app's static scheme.
 private fun customColorScheme(seed: Color, darkTheme: Boolean): ColorScheme {
     val base = if (darkTheme) DarkColorScheme else LightColorScheme
-    val onSeed = if (seed.luminance() > 0.45f) Color.Black else Color.White
 
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(seed.toArgb(), hsv)
-    val containerHsv = hsv.copyOf().also { it[1] = (it[1] * 0.35f).coerceIn(0f, 1f) }
-    containerHsv[2] = if (darkTheme) (containerHsv[2] * 0.45f).coerceIn(0.1f, 1f) else 0.92f
-    val container = Color(android.graphics.Color.HSVToColor(containerHsv))
-    val onContainer = if (container.luminance() > 0.45f) Color.Black else Color.White
+    val hue = hsv[0]
+    val saturation = hsv[1]
+    val value = hsv[2]
+
+    val primary = deriveRole(hue, saturation, value, darkTheme)
+    val secondary = deriveRole(hue, saturation * 0.45f, value, darkTheme)
+    val tertiary = deriveRole(hue + 60f, saturation, value, darkTheme)
 
     return base.copy(
-        primary = seed,
-        onPrimary = onSeed,
-        primaryContainer = container,
-        onPrimaryContainer = onContainer,
-        inversePrimary = seed
+        primary = primary.color,
+        onPrimary = primary.onColor,
+        primaryContainer = primary.container,
+        onPrimaryContainer = primary.onContainer,
+        inversePrimary = primary.color,
+        secondary = secondary.color,
+        onSecondary = secondary.onColor,
+        secondaryContainer = secondary.container,
+        onSecondaryContainer = secondary.onContainer,
+        tertiary = tertiary.color,
+        onTertiary = tertiary.onColor,
+        tertiaryContainer = tertiary.container,
+        onTertiaryContainer = tertiary.onContainer
     )
 }
 
