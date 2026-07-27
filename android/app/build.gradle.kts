@@ -1,3 +1,6 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -127,4 +130,19 @@ dependencies {
     androidTestImplementation("androidx.room:room-testing:2.6.1")
     androidTestImplementation("androidx.arch.core:core-testing:2.2.0")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+}
+
+// Copies every debug APK build into ../Compiled APKs/, date-stamped like
+// BabyDataLog_YYYYMMDD.apk, so there's always a ready-to-share build for people
+// who don't want to install Android Studio and compile it themselves.
+tasks.register<Copy>("copyDebugApkDated") {
+    val dateStamp = SimpleDateFormat("yyyyMMdd").format(Date())
+    from(layout.buildDirectory.dir("outputs/apk/debug"))
+    include("app-debug.apk")
+    into(rootProject.projectDir.parentFile.resolve("Compiled APKs"))
+    rename { "BabyDataLog_$dateStamp.apk" }
+}
+
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+    finalizedBy("copyDebugApkDated")
 }
