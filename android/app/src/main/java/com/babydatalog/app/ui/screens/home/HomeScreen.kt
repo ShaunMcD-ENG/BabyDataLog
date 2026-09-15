@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BabyChangingStation
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ChildCare
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MonitorWeight
@@ -33,6 +34,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -46,6 +51,7 @@ import com.babydatalog.app.utils.formatDuration
 import com.babydatalog.app.utils.toRelativeTime
 import com.babydatalog.app.viewmodel.GrowthViewModel
 import com.babydatalog.app.viewmodel.HomeViewModel
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +82,7 @@ fun HomeScreen(
     val todayFeedingCount by viewModel.todayFeedingCount.collectAsStateWithLifecycle()
     val todayNappyCount by viewModel.todayNappyCount.collectAsStateWithLifecycle()
     val latestMeasurement by growthViewModel.latestMeasurement.collectAsStateWithLifecycle()
+    val currentSleepSession by viewModel.currentSleepSession.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -179,6 +186,48 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item { Spacer(modifier = Modifier.height(4.dp)) }
+
+            // Currently-asleep status — new, cross-device live state (spec §4.2)
+            item {
+                var elapsedSeconds by remember { mutableLongStateOf(0L) }
+                LaunchedEffect(currentSleepSession?.startTimeMs) {
+                    val start = currentSleepSession?.startTimeMs
+                    if (start != null) {
+                        while (true) {
+                            elapsedSeconds = (System.currentTimeMillis() - start) / 1000L
+                            delay(1000L)
+                        }
+                    }
+                }
+                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (currentSleepSession != null) {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Filled.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Baby is asleep", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                }
+                                val hours = elapsedSeconds / 3600
+                                val mins = (elapsedSeconds % 3600) / 60
+                                Text(
+                                    text = if (hours > 0) "%dh %02dm".format(hours, mins) else "%dm".format(mins),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Button(onClick = { viewModel.quickEndSleep() }) { Text("Wake Up") }
+                        } else {
+                            Text("Baby is awake", style = MaterialTheme.typography.titleMedium)
+                            Button(onClick = { viewModel.quickStartSleep() }) { Text("Went to Sleep") }
+                        }
+                    }
+                }
+            }
 
             // Today's stats
             item {

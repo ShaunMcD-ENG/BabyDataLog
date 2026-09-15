@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.babydatalog.app.data.database.entity.FeedingSession
 import com.babydatalog.app.data.database.entity.NappyChange
+import com.babydatalog.app.data.database.entity.SleepSession
 import com.babydatalog.app.data.repository.FeedingRepository
 import com.babydatalog.app.data.repository.NappyRepository
+import com.babydatalog.app.data.repository.SleepRepository
+import com.babydatalog.app.utils.defaultSleepTypeForStart
 import com.babydatalog.app.utils.todayEndMs
 import com.babydatalog.app.utils.todayStartMs
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,12 +20,14 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val feedingRepository: FeedingRepository,
-    private val nappyRepository: NappyRepository
+    private val nappyRepository: NappyRepository,
+    private val sleepRepository: SleepRepository
 ) : ViewModel() {
 
     // babyId is now driven by BabyViewModel via HomeScreen's LaunchedEffect
@@ -63,6 +68,25 @@ class HomeViewModel @Inject constructor(
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val currentSleepSession: StateFlow<SleepSession?> = _activeBabyId
+        .flatMapLatest { id ->
+            if (id != null) sleepRepository.getOpenSleepSession(id) else flowOf(null)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    fun quickStartSleep() {
+        val babyId = _activeBabyId.value ?: return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            sleepRepository.startSleep(babyId, defaultSleepTypeForStart(now), now)
+        }
+    }
+
+    fun quickEndSleep() {
+        val open = currentSleepSession.value ?: return
+        viewModelScope.launch { sleepRepository.endSleep(open) }
+    }
 
     fun setActiveBabyId(id: Long) {
         if (_activeBabyId.value != id) {
