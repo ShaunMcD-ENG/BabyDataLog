@@ -43,6 +43,7 @@ import com.babydatalog.app.ui.screens.nappy.NappyListScreen
 import com.babydatalog.app.ui.screens.settings.SettingsScreen
 import com.babydatalog.app.ui.screens.sleep.SleepFormScreen
 import com.babydatalog.app.ui.screens.sleep.SleepListScreen
+import com.babydatalog.app.ui.screens.sleep.SleepStatsScreen
 import com.babydatalog.app.ui.screens.summary.SummaryScreen
 import com.babydatalog.app.ui.screens.sync.SyncScreen
 import com.babydatalog.app.viewmodel.BabyViewModel
@@ -372,6 +373,13 @@ fun NavGraph(
                     sleepId = sleepId,
                     onNavigateBack = { navController.popBackStack() }
                 )
+            }
+            composable(Routes.SLEEP_STATS) {
+                val vm: com.babydatalog.app.viewmodel.SleepStatsViewModel = hiltViewModel()
+                LaunchedEffect(babyUiState.selectedBaby?.id) {
+                    babyUiState.selectedBaby?.id?.let { vm.setActiveBabyId(it) }
+                }
+                SleepStatsScreen()
             }
             composable(Routes.SUMMARY) {
                 val vm: SummaryViewModel = hiltViewModel()
