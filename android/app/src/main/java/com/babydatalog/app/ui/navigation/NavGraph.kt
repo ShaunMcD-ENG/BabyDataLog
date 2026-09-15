@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.BabyChangingStation
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ChildCare
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MonitorWeight
@@ -40,6 +41,8 @@ import com.babydatalog.app.ui.screens.milestone.MilestoneListScreen
 import com.babydatalog.app.ui.screens.nappy.NappyFormScreen
 import com.babydatalog.app.ui.screens.nappy.NappyListScreen
 import com.babydatalog.app.ui.screens.settings.SettingsScreen
+import com.babydatalog.app.ui.screens.sleep.SleepFormScreen
+import com.babydatalog.app.ui.screens.sleep.SleepListScreen
 import com.babydatalog.app.ui.screens.summary.SummaryScreen
 import com.babydatalog.app.ui.screens.sync.SyncScreen
 import com.babydatalog.app.viewmodel.BabyViewModel
@@ -47,6 +50,7 @@ import com.babydatalog.app.viewmodel.FeedingViewModel
 import com.babydatalog.app.viewmodel.GrowthViewModel
 import com.babydatalog.app.viewmodel.MilestoneViewModel
 import com.babydatalog.app.viewmodel.NappyViewModel
+import com.babydatalog.app.viewmodel.SleepViewModel
 import com.babydatalog.app.viewmodel.SummaryViewModel
 
 object Routes {
@@ -63,6 +67,10 @@ object Routes {
     const val GROWTH_LIST = "growth_list"
     const val GROWTH_ADD = "growth_add"
     const val GROWTH_EDIT = "growth_edit/{measurementId}"
+    const val SLEEP_LIST = "sleep_list"
+    const val SLEEP_ADD = "sleep_add"
+    const val SLEEP_EDIT = "sleep_edit/{sleepId}"
+    const val SLEEP_STATS = "sleep_stats"
     const val SUMMARY = "summary"
     const val SETTINGS = "settings"
     const val SYNC = "sync"
@@ -71,6 +79,7 @@ object Routes {
     fun nappyEdit(nappyId: Long) = "nappy_edit/$nappyId"
     fun milestoneEdit(milestoneId: Long) = "milestone_edit/$milestoneId"
     fun growthEdit(id: Long) = "growth_edit/$id"
+    fun sleepEdit(sleepId: Long) = "sleep_edit/$sleepId"
 }
 
 private data class BottomNavItem(
@@ -114,6 +123,11 @@ fun NavGraph(
             icon = { Icon(Icons.Filled.MonitorWeight, contentDescription = "Growth") }
         ),
         BottomNavItem(
+            route = Routes.SLEEP_LIST,
+            label = "Sleep",
+            icon = { Icon(Icons.Filled.Bedtime, contentDescription = "Sleep") }
+        ),
+        BottomNavItem(
             route = Routes.SUMMARY,
             label = "Summary",
             icon = { Icon(Icons.Filled.BarChart, contentDescription = "Summary") }
@@ -132,9 +146,11 @@ fun NavGraph(
         Routes.NAPPY_LIST,
         Routes.MILESTONE_LIST,
         Routes.GROWTH_LIST,
+        Routes.SLEEP_LIST,
         Routes.SUMMARY,
         Routes.SETTINGS,
-        Routes.SYNC
+        Routes.SYNC,
+        Routes.SLEEP_STATS
     )
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -320,6 +336,40 @@ fun NavGraph(
                 val measurementId = backStackEntry.arguments?.getLong("measurementId") ?: 0L
                 GrowthFormScreen(
                     measurementId = measurementId,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.SLEEP_LIST) {
+                val vm: SleepViewModel = hiltViewModel()
+                LaunchedEffect(babyUiState.selectedBaby?.id) {
+                    babyUiState.selectedBaby?.id?.let { vm.setActiveBabyId(it) }
+                }
+                SleepListScreen(
+                    onNavigateToAdd = {
+                        if (babyUiState.selectedBaby != null) navController.navigate(Routes.SLEEP_ADD)
+                        else babyViewModel.startAddBaby()
+                    },
+                    onNavigateToEdit = { id -> navController.navigate(Routes.sleepEdit(id)) },
+                    onNavigateToStats = { navController.navigate(Routes.SLEEP_STATS) }
+                )
+            }
+            composable(Routes.SLEEP_ADD) {
+                val vm: SleepViewModel = hiltViewModel()
+                LaunchedEffect(babyUiState.selectedBaby?.id) {
+                    babyUiState.selectedBaby?.id?.let { vm.setActiveBabyId(it) }
+                }
+                SleepFormScreen(
+                    sleepId = 0L,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable(
+                route = Routes.SLEEP_EDIT,
+                arguments = listOf(navArgument("sleepId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val sleepId = backStackEntry.arguments?.getLong("sleepId") ?: 0L
+                SleepFormScreen(
+                    sleepId = sleepId,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
