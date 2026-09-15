@@ -12,11 +12,13 @@ import com.babydatalog.app.data.database.dao.FeedingDao
 import com.babydatalog.app.data.database.dao.GrowthDao
 import com.babydatalog.app.data.database.dao.MilestoneDao
 import com.babydatalog.app.data.database.dao.NappyDao
+import com.babydatalog.app.data.database.dao.SleepDao
 import com.babydatalog.app.data.database.entity.Baby
 import com.babydatalog.app.data.database.entity.FeedingSession
 import com.babydatalog.app.data.database.entity.GrowthMeasurement
 import com.babydatalog.app.data.database.entity.Milestone
 import com.babydatalog.app.data.database.entity.NappyChange
+import com.babydatalog.app.data.database.entity.SleepSession
 
 @Database(
     entities = [
@@ -24,9 +26,10 @@ import com.babydatalog.app.data.database.entity.NappyChange
         FeedingSession::class,
         NappyChange::class,
         Milestone::class,
-        GrowthMeasurement::class
+        GrowthMeasurement::class,
+        SleepSession::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -37,6 +40,7 @@ abstract class BabyDataLogDatabase : RoomDatabase() {
     abstract fun nappyDao(): NappyDao
     abstract fun milestoneDao(): MilestoneDao
     abstract fun growthDao(): GrowthDao
+    abstract fun sleepDao(): SleepDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -165,6 +169,31 @@ abstract class BabyDataLogDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE `nappy_changes_new` RENAME TO `nappy_changes`")
                 database.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_nappy_changes_babyId` ON `nappy_changes` (`babyId`)"
+                )
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `sleep_sessions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `syncUuid` TEXT NOT NULL,
+                        `babyId` INTEGER NOT NULL,
+                        `startTimeMs` INTEGER NOT NULL,
+                        `endTimeMs` INTEGER,
+                        `type` TEXT NOT NULL,
+                        `notes` TEXT,
+                        `createdAtMs` INTEGER NOT NULL,
+                        `updatedAtMs` INTEGER NOT NULL,
+                        `deletedAtMs` INTEGER,
+                        FOREIGN KEY(`babyId`) REFERENCES `babies`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_sleep_sessions_babyId` ON `sleep_sessions` (`babyId`)"
                 )
             }
         }

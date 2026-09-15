@@ -7,6 +7,7 @@ import com.babydatalog.app.data.database.entity.LatchQuality
 import com.babydatalog.app.data.database.entity.MilestoneCategory
 import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.database.entity.PooColour
+import com.babydatalog.app.data.database.entity.SleepType
 
 class Converters {
 
@@ -51,4 +52,11 @@ class Converters {
 
     @TypeConverter
     fun toMilestoneCategory(value: String): MilestoneCategory = MilestoneCategory.valueOf(value)
+
+    // SleepType
+    @TypeConverter
+    fun fromSleepType(value: SleepType): String = value.name
+
+    @TypeConverter
+    fun toSleepType(value: String): SleepType = SleepType.valueOf(value)
 }

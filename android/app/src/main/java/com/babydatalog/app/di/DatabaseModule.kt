@@ -8,6 +8,7 @@ import com.babydatalog.app.data.database.dao.FeedingDao
 import com.babydatalog.app.data.database.dao.GrowthDao
 import com.babydatalog.app.data.database.dao.MilestoneDao
 import com.babydatalog.app.data.database.dao.NappyDao
+import com.babydatalog.app.data.database.dao.SleepDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -35,7 +36,8 @@ object DatabaseModule {
                 BabyDataLogDatabase.MIGRATION_3_4,
                 BabyDataLogDatabase.MIGRATION_4_5,
                 BabyDataLogDatabase.MIGRATION_5_6,
-                BabyDataLogDatabase.MIGRATION_6_7
+                BabyDataLogDatabase.MIGRATION_6_7,
+                BabyDataLogDatabase.MIGRATION_7_8
             )
             .build()
     }
@@ -58,4 +60,8 @@ object DatabaseModule {
 
     @Provides
     fun provideGrowthDao(db: BabyDataLogDatabase): GrowthDao = db.growthDao()
+
+    @Provides
+    fun provideSleepDao(database: BabyDataLogDatabase): SleepDao =
+        database.sleepDao()
 }
