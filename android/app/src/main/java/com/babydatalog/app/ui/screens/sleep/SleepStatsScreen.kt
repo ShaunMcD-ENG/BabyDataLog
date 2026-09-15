@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -152,23 +153,34 @@ private fun SleepStatRow(label: String, value: String) {
 
 @Composable
 private fun SleepHistogramChart(histogram: SleepHistogram) {
-    val entries = remember(histogram) {
-        histogram.hourlyPercent.mapIndexed { hour, pct -> entryOf(hour.toFloat(), pct) }
-    }
-    val producer = remember(histogram) { ChartEntryModelProducer(entries) }
+    // Vico's Chart() leaves stale (blank) columns on screen when only chartModelProducer's
+    // *content* changes across recompositions -- reproduced independently of the ViewModel/
+    // StateFlow plumbing: a chart that renders 24 all-zero entries once, then receives an
+    // update with real values, keeps drawing nothing even though the axis scale updates
+    // correctly and the producer's entries are verifiably correct (confirmed via logging and
+    // via a hardcoded-producer control that rendered fine). Keying the whole chart subtree on
+    // `histogram` forces Vico to fully discard and rebuild its internal chart state instead of
+    // reusing the stale one, which reliably fixes it. A stable producer + setEntries(), and
+    // diffAnimationSpec = null, were both tried first and did NOT fix this on their own.
+    key(histogram) {
+        val entries = remember(histogram) {
+            histogram.hourlyPercent.mapIndexed { hour, pct -> entryOf(hour.toFloat(), pct) }
+        }
+        val producer = remember(histogram) { ChartEntryModelProducer(entries) }
 
-    ProvideChartStyle(m3ChartStyle()) {
-        Chart(
-            chart = columnChart(),
-            chartModelProducer = producer,
-            startAxis = rememberStartAxis(
-                itemPlacer = AxisItemPlacer.Vertical.default(maxItemCount = 5),
-                valueFormatter = { value, _ -> "${value.toInt()}%" }
-            ),
-            bottomAxis = rememberBottomAxis(
-                valueFormatter = { value, _ -> if (value.toInt() % 2 == 0) "${value.toInt()}h" else "" }
-            ),
-            modifier = Modifier.fillMaxWidth().height(200.dp)
-        )
+        ProvideChartStyle(m3ChartStyle()) {
+            Chart(
+                chart = columnChart(),
+                chartModelProducer = producer,
+                startAxis = rememberStartAxis(
+                    itemPlacer = AxisItemPlacer.Vertical.default(maxItemCount = 5),
+                    valueFormatter = { value, _ -> "${value.toInt()}%" }
+                ),
+                bottomAxis = rememberBottomAxis(
+                    valueFormatter = { value, _ -> if (value.toInt() % 2 == 0) "${value.toInt()}h" else "" }
+                ),
+                modifier = Modifier.fillMaxWidth().height(200.dp)
+            )
+        }
     }
 }
