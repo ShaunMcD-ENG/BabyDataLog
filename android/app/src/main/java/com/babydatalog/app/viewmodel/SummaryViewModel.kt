@@ -6,10 +6,12 @@ import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.repository.FeedingRepository
 import com.babydatalog.app.data.repository.GrowthRepository
 import com.babydatalog.app.data.repository.NappyRepository
+import com.babydatalog.app.data.repository.SleepRepository
 import com.babydatalog.app.utils.WeightGrowthStats
 import com.babydatalog.app.utils.computeWeightGrowthStats
 import com.babydatalog.app.utils.monthEndMs
 import com.babydatalog.app.utils.monthStartMs
+import com.babydatalog.app.utils.splitAcrossDays
 import com.babydatalog.app.utils.todayEndMs
 import com.babydatalog.app.utils.todayStartMs
 import com.babydatalog.app.utils.weekEndMs
@@ -48,7 +50,8 @@ data class SummaryStats(
 class SummaryViewModel @Inject constructor(
     private val feedingRepository: FeedingRepository,
     private val nappyRepository: NappyRepository,
-    private val growthRepository: GrowthRepository
+    private val growthRepository: GrowthRepository,
+    private val sleepRepository: SleepRepository
 ) : ViewModel() {
 
     // babyId is now driven by BabyViewModel via NavGraph LaunchedEffect
@@ -191,6 +194,29 @@ class SummaryViewModel @Inject constructor(
             else flowOf(computeWeightGrowthStats(emptyList()))
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), computeWeightGrowthStats(emptyList()))
+
+    // Combined (Nap + Night) totals for the currently-selected SummaryPeriod — the
+    // same Today/This Week/This Month tabs the Feeding/Nappy cards above use,
+    // not the dedicated Sleep section's own Last-7/30/365-days/All-time filter
+    // (spec §6 — this card sits alongside those existing period-scoped numbers).
+    data class SleepSummaryStats(val sessionCount: Int = 0, val totalSleepMinutes: Float = 0f)
+
+    val sleepStats: StateFlow<SleepSummaryStats> = combine(_defaultBabyId, _selectedPeriod) { babyId, period -> babyId to period }
+        .flatMapLatest { (babyId, period) ->
+            if (babyId == null) return@flatMapLatest flowOf(SleepSummaryStats())
+            val (startMs, endMs) = periodRange(period)
+            sleepRepository.getSleepSessionsForBaby(babyId).map { sessions ->
+                val slices = sessions
+                    .filter { it.endTimeMs != null }
+                    .flatMap { splitAcrossDays(it) }
+                    .filter { it.startMs < endMs && it.endMs > startMs }
+                SleepSummaryStats(
+                    sessionCount = slices.size,
+                    totalSleepMinutes = slices.sumOf { (it.endMs - it.startMs) / 60_000.0 }.toFloat()
+                )
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SleepSummaryStats())
 
     fun setActiveBabyId(id: Long) {
         if (_defaultBabyId.value != id) {

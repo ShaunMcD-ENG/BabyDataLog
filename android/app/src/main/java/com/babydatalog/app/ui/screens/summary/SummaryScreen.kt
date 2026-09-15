@@ -30,6 +30,7 @@ import com.babydatalog.app.utils.WeightPeriodStat
 import com.babydatalog.app.utils.formatDuration
 import com.babydatalog.app.viewmodel.SummaryPeriod
 import com.babydatalog.app.viewmodel.SummaryViewModel
+import com.babydatalog.app.viewmodel.SummaryViewModel.SleepSummaryStats
 import com.patrykandpatrick.vico.compose.axis.horizontal.rememberBottomAxis
 import com.patrykandpatrick.vico.compose.axis.vertical.rememberStartAxis
 import com.patrykandpatrick.vico.compose.chart.Chart
@@ -48,6 +49,7 @@ fun SummaryScreen(
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val selectedPeriod by viewModel.selectedPeriod.collectAsStateWithLifecycle()
     val weightStats by viewModel.weightStats.collectAsStateWithLifecycle()
+    val sleepStats by viewModel.sleepStats.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -136,6 +138,9 @@ fun SummaryScreen(
 
             // Weight growth card — always whole-history based, independent of the period selector above
             WeightGrowthCard(weightStats)
+
+            // Sleep summary — condensed; full stats + histogram live on the dedicated Sleep tab
+            SleepSummaryCard(sleepStats)
 
             // Feeding chart — title and x-axis labels change with period
             val feedingChartTitle = when (selectedPeriod) {
@@ -251,6 +256,23 @@ private fun WeightGrowthCard(weightStats: WeightGrowthStats) {
                 Spacer(modifier = Modifier.height(12.dp))
                 StatRow(label = "All-Time Avg", value = formatPerDay(weightStats.avgPerDayAllTimeGrams))
             }
+        }
+    }
+}
+
+@Composable
+private fun SleepSummaryCard(sleepStats: SleepSummaryStats) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Sleep",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            StatRow(label = "Sessions", value = "${sleepStats.sessionCount}")
+            StatRow(label = "Total Time Asleep", value = formatDuration(sleepStats.totalSleepMinutes))
         }
     }
 }
