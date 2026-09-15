@@ -5,6 +5,7 @@ import com.babydatalog.app.data.database.dao.FeedingDao
 import com.babydatalog.app.data.database.dao.GrowthDao
 import com.babydatalog.app.data.database.dao.MilestoneDao
 import com.babydatalog.app.data.database.dao.NappyDao
+import com.babydatalog.app.data.database.dao.SleepDao
 import com.babydatalog.app.data.database.entity.Baby
 import com.babydatalog.app.utils.floorToDay
 import com.babydatalog.app.utils.floorToMinute
@@ -40,7 +41,8 @@ class SyncRepository @Inject constructor(
     private val feedingDao: FeedingDao,
     private val nappyDao: NappyDao,
     private val milestoneDao: MilestoneDao,
-    private val growthDao: GrowthDao
+    private val growthDao: GrowthDao,
+    private val sleepDao: SleepDao
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -127,6 +129,7 @@ class SyncRepository @Inject constructor(
         nappyDao.deleteAll()
         milestoneDao.deleteAll()
         growthDao.deleteAll()
+        sleepDao.deleteAll()
         prefs.lastSyncMs = 0L
         prefs.deferredRecordsJson = null
         return sync()
@@ -186,6 +189,13 @@ class SyncRepository @Inject constructor(
                 val dto = g.toSync().copy(babySyncUuid = uuid ?: "")
                 if (uuid.isNullOrBlank()) {
                     holdBack("growth_measurements", g.syncUuid, describeGrowth(g.timestampMs), json.encodeToString(dto))
+                } else json.encodeToJsonElement(dto)
+            }),
+            TablePush("sleep_sessions", sleepDao.getAllForSync().mapNotNull { s ->
+                val uuid = babyUuidMap[s.babyId]
+                val dto = s.toSync().copy(babySyncUuid = uuid ?: "")
+                if (uuid.isNullOrBlank()) {
+                    holdBack("sleep_sessions", s.syncUuid, describeSleep(s.startTimeMs), json.encodeToString(dto))
                 } else json.encodeToJsonElement(dto)
             })
         )
@@ -383,6 +393,28 @@ class SyncRepository @Inject constructor(
             }
         }
 
+        pull.data["sleep_sessions"]?.jsonArray?.forEach { el ->
+            val record = json.decodeFromJsonElement<SyncSleep>(el)
+            if (record.babySyncUuid.isBlank()) sawBlankBabyUuid = true
+            val byUuid = sleepDao.getByUuid(record.syncUuid)
+            val localBabyId = resolveBabyId(record.babySyncUuid, record.babyId) ?: byUuid?.babyId
+            if (localBabyId == null) {
+                defer("sleep_sessions", record.syncUuid, describeSleep(record.startTimeMs), record.babySyncUuid, el)
+                return@forEach
+            }
+            val entity = record.toEntity().copy(babyId = localBabyId)
+            val minute = floorToMinute(record.startTimeMs)
+            val existing = byUuid
+                ?: sleepDao.getByNaturalKey(localBabyId, minute, minute + MINUTE_MS)
+            when {
+                existing == null -> sleepDao.insertSleep(entity.copy(id = 0L))
+                record.updatedAtMs > existing.updatedAtMs ->
+                    sleepDao.updateSleep(entity.copy(id = existing.id))
+                existing.syncUuid != record.syncUuid ->
+                    sleepDao.updateSleep(existing.copy(syncUuid = record.syncUuid))
+            }
+        }
+
         return PullApplyResult(deferred, serverOutdated = sawBlankBabyUuid)
     }
 
@@ -445,6 +477,13 @@ class SyncRepository @Inject constructor(
                     if (existing == null) growthDao.insertMeasurement(entity.copy(id = 0L))
                     else growthDao.updateMeasurement(entity.copy(id = existing.id))
                 }
+                "sleep_sessions" -> {
+                    val entity = json.decodeFromString<SyncSleep>(record.recordJson)
+                        .toEntity().copy(babyId = babyId, updatedAtMs = now)
+                    val existing = sleepDao.getByUuid(record.syncUuid)
+                    if (existing == null) sleepDao.insertSleep(entity.copy(id = 0L))
+                    else sleepDao.updateSleep(entity.copy(id = existing.id))
+                }
                 else -> return SyncResult.Error("Unknown table ${record.table}")
             }
         } catch (e: Exception) {
@@ -462,6 +501,7 @@ class SyncRepository @Inject constructor(
         "Nappy (wee: $weeAmount, poo: $pooAmount) • ${descDateFormat.format(Date(ms))}"
     private fun describeMilestone(title: String, ms: Long) = "Milestone \"$title\" • ${descDateFormat.format(Date(ms))}"
     private fun describeGrowth(ms: Long) = "Growth • ${descDateFormat.format(Date(ms))}"
+    private fun describeSleep(ms: Long) = "Sleep • ${descDateFormat.format(Date(ms))}"
 
     private fun generatePairingCode(): String {
         val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"

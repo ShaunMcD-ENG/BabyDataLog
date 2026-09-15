@@ -11,6 +11,8 @@ import com.babydatalog.app.data.database.entity.MilestoneCategory
 import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.database.entity.NappyChange
 import com.babydatalog.app.data.database.entity.PooColour
+import com.babydatalog.app.data.database.entity.SleepSession
+import com.babydatalog.app.data.database.entity.SleepType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -103,6 +105,15 @@ data class SyncGrowth(
     val babySyncUuid: String = ""
 )
 
+@Serializable
+data class SyncSleep(
+    val id: Long, val syncUuid: String, val babyId: Long,
+    val startTimeMs: Long, val endTimeMs: Long?, val type: String,
+    val notes: String?, val createdAtMs: Long, val updatedAtMs: Long,
+    val deletedAtMs: Long? = null,
+    val babySyncUuid: String = ""
+)
+
 // --- Entity → DTO ---
 
 fun Baby.toSync() = SyncBaby(id, syncUuid, name, birthDateMs, birthWeightGrams, createdAtMs, updatedAtMs, deletedAtMs)
@@ -125,6 +136,11 @@ fun Milestone.toSync() = SyncMilestone(
 fun GrowthMeasurement.toSync() = SyncGrowth(
     id, syncUuid, babyId, timestampMs, weightGrams, heightCm, headCircumferenceCm,
     footSizeMm, handSizeMm, legLengthCm, armLengthCm, backLengthCm, notes, createdAtMs, updatedAtMs, deletedAtMs
+)
+
+fun SleepSession.toSync() = SyncSleep(
+    id, syncUuid, babyId, startTimeMs, endTimeMs, type.name,
+    notes, createdAtMs, updatedAtMs, deletedAtMs
 )
 
 // --- DTO → Entity ---
@@ -157,4 +173,10 @@ fun SyncMilestone.toEntity() = Milestone(
 fun SyncGrowth.toEntity() = GrowthMeasurement(
     id, syncUuid, babyId, timestampMs, weightGrams, heightCm, headCircumferenceCm,
     footSizeMm, handSizeMm, legLengthCm, armLengthCm, backLengthCm, notes, createdAtMs, updatedAtMs, deletedAtMs
+)
+
+fun SyncSleep.toEntity() = SleepSession(
+    id, syncUuid, babyId, startTimeMs, endTimeMs,
+    SleepType.valueOf(type),
+    notes, createdAtMs, updatedAtMs, deletedAtMs
 )
