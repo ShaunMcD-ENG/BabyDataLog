@@ -10,6 +10,7 @@ const SYNC_TABLES = [
   "nappy_changes",
   "milestones",
   "growth_measurements",
+  "sleep_sessions",
 ] as const;
 
 type SyncTable = (typeof SYNC_TABLES)[number];
@@ -58,11 +59,11 @@ function findByNaturalKey(table: SyncTable, record: SyncRecord): SyncRecord | un
 
   const babyId = Number(record.babyId ?? 0);
   const eventMs = Number(
-    (table === "feeding_sessions" ? record.startTimeMs : record.timestampMs) ?? 0
+    (table === "feeding_sessions" || table === "sleep_sessions" ? record.startTimeMs : record.timestampMs) ?? 0
   );
   if (!babyId || !eventMs) return undefined;
   const minStart = Math.floor(eventMs / MINUTE_MS) * MINUTE_MS;
-  const timeCol = table === "feeding_sessions" ? "startTimeMs" : "timestampMs";
+  const timeCol = table === "feeding_sessions" || table === "sleep_sessions" ? "startTimeMs" : "timestampMs";
 
   if (table === "milestones") {
     return db

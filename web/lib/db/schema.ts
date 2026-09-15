@@ -99,6 +99,19 @@ export function runMigrations() {
       deletedAtMs          INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS sleep_sessions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      syncUuid    TEXT    NOT NULL UNIQUE,
+      babyId      INTEGER NOT NULL REFERENCES babies(id) ON DELETE CASCADE,
+      startTimeMs INTEGER NOT NULL,
+      endTimeMs   INTEGER,
+      type        TEXT    NOT NULL,
+      notes       TEXT,
+      createdAtMs INTEGER NOT NULL,
+      updatedAtMs INTEGER NOT NULL DEFAULT 0,
+      deletedAtMs INTEGER
+    );
+
     -- Sync tracking
     CREATE TABLE IF NOT EXISTS sync_log (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,7 +163,7 @@ export function runMigrations() {
   // Add updatedAtMs to any table that existed before this column was introduced.
   // PRAGMA table_info is safe to call repeatedly; ALTER TABLE only runs if needed.
   const DATA_TABLES = [
-    "babies", "feeding_sessions", "nappy_changes", "milestones", "growth_measurements",
+    "babies", "feeding_sessions", "nappy_changes", "milestones", "growth_measurements", "sleep_sessions",
   ] as const;
 
   for (const table of DATA_TABLES) {
@@ -352,6 +365,8 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_nappies_updatedAt    ON nappy_changes(updatedAtMs);
     CREATE INDEX IF NOT EXISTS idx_milestones_updatedAt ON milestones(updatedAtMs);
     CREATE INDEX IF NOT EXISTS idx_growth_updatedAt     ON growth_measurements(updatedAtMs);
+    CREATE INDEX IF NOT EXISTS idx_sleep_babyId         ON sleep_sessions(babyId);
+    CREATE INDEX IF NOT EXISTS idx_sleep_updatedAt      ON sleep_sessions(updatedAtMs);
     CREATE INDEX IF NOT EXISTS idx_babies_updatedAt     ON babies(updatedAtMs);
   `);
 }
