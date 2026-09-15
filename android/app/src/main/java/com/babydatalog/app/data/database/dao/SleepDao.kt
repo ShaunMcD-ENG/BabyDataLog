@@ -1,7 +1,6 @@
 package com.babydatalog.app.data.database.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
@@ -17,7 +16,7 @@ interface SleepDao {
     @Update
     suspend fun updateSleep(session: SleepSession)
 
-    @Delete
+    @Update
     suspend fun deleteSleep(session: SleepSession)
 
     @Query("UPDATE sleep_sessions SET deletedAtMs = :now, updatedAtMs = :now WHERE babyId = :babyId AND deletedAtMs IS NULL")

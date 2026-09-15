@@ -116,7 +116,8 @@ class SleepDaoTest {
         sleepDao.insertSleep(testSleep(babyId))
         val inserted = sleepDao.getSleepSessionsForBaby(babyId).first().first()
 
-        sleepDao.deleteSleep(inserted)
+        val now = System.currentTimeMillis()
+        sleepDao.deleteSleep(inserted.copy(deletedAtMs = now, updatedAtMs = now))
 
         val remaining = sleepDao.getSleepSessionsForBaby(babyId).first()
         assertTrue("Sleep list should be empty after deletion", remaining.isEmpty())
