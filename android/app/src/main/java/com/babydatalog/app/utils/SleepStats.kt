@@ -125,3 +125,59 @@ fun computeSleepStats(
         combined = lensStats(allSlices, dayCount, includeCount = false)
     )
 }
+
+enum class SleepLens { NAP, NIGHT, COMBINED }
+
+/** hourlyPercent has 24 entries, index = local hour-of-day (0..23), value 0..100. */
+data class SleepHistogram(val hourlyPercent: List<Float>)
+
+/**
+ * For each local hour-of-day, the percentage of days in the period where the
+ * baby was recorded asleep (for the given lens) at any point during that hour
+ * — binary presence, not duration-weighted (spec §5.3). Day-split per §5.1
+ * first, so an overnight session's hours land on the correct calendar day.
+ * Sessions are clipped to the period boundaries to exclude time outside [startMs, nowMs].
+ */
+fun computeSleepHistogram(
+    sessions: List<SleepSession>,
+    period: SleepStatsPeriod,
+    lens: SleepLens,
+    nowMs: Long = System.currentTimeMillis(),
+    zone: ZoneId = ZoneId.systemDefault()
+): SleepHistogram {
+    val closed = sessions.filter { it.endTimeMs != null }
+    val startMs = periodStartMs(period, closed, nowMs, zone)
+
+    val slices = closed.flatMap { splitAcrossDays(it, zone) }
+        .mapNotNull { slice ->
+            val clippedStart = maxOf(slice.startMs, startMs)
+            val clippedEnd = minOf(slice.endMs, nowMs)
+            if (clippedStart < clippedEnd) slice.copy(startMs = clippedStart, endMs = clippedEnd) else null
+        }
+        .filter {
+            when (lens) {
+                SleepLens.COMBINED -> true
+                SleepLens.NAP -> it.type == SleepType.NAP
+                SleepLens.NIGHT -> it.type == SleepType.NIGHT
+            }
+        }
+
+    // date -> set of local hours (0..23) the baby was asleep at any point that day
+    val hoursByDay = HashMap<LocalDate, MutableSet<Int>>()
+    for (slice in slices) {
+        var cursorMs = slice.startMs
+        while (cursorMs < slice.endMs) {
+            val zdt = Instant.ofEpochMilli(cursorMs).atZone(zone)
+            hoursByDay.getOrPut(slice.date) { mutableSetOf() }.add(zdt.hour)
+            val nextHourMs = zdt.plusHours(1).withMinute(0).withSecond(0).withNano(0).toInstant().toEpochMilli()
+            cursorMs = minOf(slice.endMs, nextHourMs)
+        }
+    }
+
+    val totalDays = ((nowMs - startMs) / DAY_MS.toDouble()).coerceAtLeast(1.0)
+    val counts = IntArray(24)
+    for (hours in hoursByDay.values) {
+        for (h in hours) counts[h]++
+    }
+    return SleepHistogram((0..23).map { h -> (counts[h] / totalDays * 100.0).toFloat() })
+}

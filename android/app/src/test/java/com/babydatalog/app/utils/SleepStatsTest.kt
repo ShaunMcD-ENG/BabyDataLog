@@ -10,6 +10,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 
 private val UTC: ZoneId = ZoneOffset.UTC
+private const val DAYS_MS_TEST = 86_400_000L
 
 private fun session(
     id: Long = 1L,
@@ -237,5 +238,95 @@ class SleepStatsTest {
         // New clipping logic cuts it to [3pm, 5pm] (2 hours = 120 minutes)
         assertEquals(1, stats.nap.sessionCount)
         assertEquals(120f, stats.nap.totalMinutes, 0.01f) // Only 2 in-period hours, not 4 total
+    }
+
+    // ─── computeSleepHistogram ───────────────────────────────────────────────
+
+    @Test
+    fun computeSleepHistogram_singleDaySingleNap_marksOnlyOverlappingHours() {
+        val dayStart = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val now = dayStart + 2 * DAYS_MS_TEST
+        // Nap from 14:45 to 15:15 -> overlaps hour 14 and hour 15
+        val nap = session(startMs = dayStart + 14 * 3_600_000L + 45 * 60_000L, endMs = dayStart + 15 * 3_600_000L + 15 * 60_000L)
+
+        val histogram = computeSleepHistogram(listOf(nap), SleepStatsPeriod.LAST_7_DAYS, SleepLens.NAP, now, UTC)
+
+        assertEquals(24, histogram.hourlyPercent.size)
+        assertTrue("hour 14 should show >0%", histogram.hourlyPercent[14] > 0f)
+        assertTrue("hour 15 should show >0%", histogram.hourlyPercent[15] > 0f)
+        assertEquals(0f, histogram.hourlyPercent[10], 0.01f)
+    }
+
+    @Test
+    fun computeSleepHistogram_binaryPresence_notDurationWeighted() {
+        val dayStart = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val now = dayStart + 2 * DAYS_MS_TEST
+        // Only 1 minute of overlap with hour 6, but the whole hour still counts as "asleep"
+        val nap = session(startMs = dayStart + 5 * 3_600_000L + 59 * 60_000L, endMs = dayStart + 6 * 3_600_000L + 1 * 60_000L)
+
+        val histogram = computeSleepHistogram(listOf(nap), SleepStatsPeriod.LAST_7_DAYS, SleepLens.NAP, now, UTC)
+
+        // period is LAST_7_DAYS -> denominator is 7 days, one day has presence in hour 5 and hour 6
+        assertTrue(histogram.hourlyPercent[5] > 0f)
+        assertTrue(histogram.hourlyPercent[6] > 0f)
+    }
+
+    @Test
+    fun computeSleepHistogram_lensFiltersByType() {
+        val dayStart = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val now = dayStart + 2 * DAYS_MS_TEST
+        val nap = session(id = 1, startMs = dayStart + 15 * 3_600_000L, endMs = dayStart + 16 * 3_600_000L, type = SleepType.NAP)
+        val night = session(id = 2, startMs = dayStart + 21 * 3_600_000L, endMs = dayStart + 23 * 3_600_000L, type = SleepType.NIGHT)
+
+        val napOnly = computeSleepHistogram(listOf(nap, night), SleepStatsPeriod.LAST_7_DAYS, SleepLens.NAP, now, UTC)
+        assertEquals(0f, napOnly.hourlyPercent[21], 0.01f)
+        assertTrue(napOnly.hourlyPercent[15] > 0f)
+
+        val nightOnly = computeSleepHistogram(listOf(nap, night), SleepStatsPeriod.LAST_7_DAYS, SleepLens.NIGHT, now, UTC)
+        assertEquals(0f, nightOnly.hourlyPercent[15], 0.01f)
+        assertTrue(nightOnly.hourlyPercent[21] > 0f)
+
+        val combined = computeSleepHistogram(listOf(nap, night), SleepStatsPeriod.LAST_7_DAYS, SleepLens.COMBINED, now, UTC)
+        assertTrue(combined.hourlyPercent[15] > 0f)
+        assertTrue(combined.hourlyPercent[21] > 0f)
+    }
+
+    @Test
+    fun computeSleepHistogram_openSession_excluded() {
+        val now = 1_700_000_000_000L
+        val open = session(startMs = now - 1_800_000L, endMs = null)
+        val histogram = computeSleepHistogram(listOf(open), SleepStatsPeriod.LAST_7_DAYS, SleepLens.COMBINED, now, UTC)
+        assertTrue(histogram.hourlyPercent.all { it == 0f })
+    }
+
+    @Test
+    fun computeSleepHistogram_sliceStradlesPeriodStart_clipsAndExcludesOutsideHours() {
+        // Use "now" at 3pm (15:00) local time, NOT at midnight
+        // This ensures periodStartMs lands mid-day, not at a midnight boundary
+        val now = LocalDate.of(2024, 1, 8).atTime(15, 0).toInstant(UTC.rules.getOffset(java.time.Instant.now())).toEpochMilli()
+        // For LAST_7_DAYS: periodStartMs = now - 7*DAY_MS = 2024-01-01 at 3pm
+        val periodStart = now - 7 * DAYS_MS_TEST
+
+        // Session: entirely on 2024-01-01, spans 1pm → 5pm (4 hours total)
+        // splitAcrossDays produces ONE slice (no midnight crossing)
+        // This slice straddles the period boundary at 3pm
+        // Only the 3pm→5pm portion falls within [periodStart, now]
+        // Hours marked in period: 15 (3pm) and 16 (4pm), but NOT 13 (1pm) or 14 (2pm)
+        val sessions = listOf(
+            session(
+                id = 1,
+                startMs = periodStart - 2 * 3_600_000L,   // 1pm: 2 hours before 3pm cutoff
+                endMs = periodStart + 2 * 3_600_000L,     // 5pm: 2 hours after 3pm cutoff
+                type = SleepType.NAP
+            )
+        )
+        val histogram = computeSleepHistogram(sessions, SleepStatsPeriod.LAST_7_DAYS, SleepLens.NAP, now, UTC)
+
+        // Old buggy filter would mark hours 13, 14, 15, 16 (the entire 1pm-5pm span)
+        // New clipping logic should mark only 15 and 16 (the 3pm-5pm in-period span)
+        assertEquals(0f, histogram.hourlyPercent[13], 0.01f)
+        assertEquals(0f, histogram.hourlyPercent[14], 0.01f)
+        assertTrue("hour 15 (3pm) should be marked - in period", histogram.hourlyPercent[15] > 0f)
+        assertTrue("hour 16 (4pm) should be marked - in period", histogram.hourlyPercent[16] > 0f)
     }
 }
