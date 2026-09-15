@@ -106,6 +106,25 @@ class SleepStatsTest {
         assertTrue(splitAcrossDays(session(startMs = now, endMs = now - 1000L), UTC).isEmpty())
     }
 
+    @Test
+    fun splitAcrossDays_nonUtcZone_usesPassedZoneNotUtc() {
+        val kiritimatiZone = ZoneId.of("Pacific/Kiritimati") // UTC+14
+
+        // Session from 2024-01-01 23:00 UTC to 2024-01-02 01:00 UTC (2 hours, crosses UTC midnight)
+        // In Kiritimati time (UTC+14): 2024-01-02 13:00 to 2024-01-02 15:00 (same local day, no local midnight crossing)
+        val utcStart = LocalDate.of(2024, 1, 1).atTime(23, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
+        val utcEnd = LocalDate.of(2024, 1, 2).atTime(1, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
+
+        val s = session(startMs = utcStart, endMs = utcEnd, type = SleepType.NAP)
+        val slices = splitAcrossDays(s, kiritimatiZone)
+
+        // Should be 1 slice because in Kiritimati's local timezone, the session
+        // doesn't cross midnight. If the function incorrectly used UTC, it would return 2 slices.
+        assertEquals(1, slices.size)
+        assertEquals(LocalDate.of(2024, 1, 2), slices[0].date)
+        assertEquals(2 * 3_600_000L, slices[0].endMs - slices[0].startMs) // 2 hours
+    }
+
     // ─── periodStartMs ───────────────────────────────────────────────────────
 
     @Test
