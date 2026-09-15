@@ -175,6 +175,7 @@ fun SleepFormScreen(
                 Spacer(modifier = Modifier.height(4.dp))
                 OutlinedButton(
                     onClick = { showDeleteConfirm = true },
+                    enabled = state.id > 0L,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Delete")

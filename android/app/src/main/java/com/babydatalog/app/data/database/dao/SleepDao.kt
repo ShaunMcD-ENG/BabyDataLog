@@ -28,7 +28,7 @@ interface SleepDao {
     @Query("SELECT * FROM sleep_sessions WHERE id = :id AND deletedAtMs IS NULL")
     fun getSleepById(id: Long): Flow<SleepSession?>
 
-    @Query("SELECT * FROM sleep_sessions WHERE babyId = :babyId AND endTimeMs IS NULL AND deletedAtMs IS NULL LIMIT 1")
+    @Query("SELECT * FROM sleep_sessions WHERE babyId = :babyId AND endTimeMs IS NULL AND deletedAtMs IS NULL ORDER BY startTimeMs DESC LIMIT 1")
     fun getOpenSleepSession(babyId: Long): Flow<SleepSession?>
 
     @Query("SELECT * FROM sleep_sessions")

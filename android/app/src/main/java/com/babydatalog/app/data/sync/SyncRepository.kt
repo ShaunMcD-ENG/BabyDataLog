@@ -103,7 +103,7 @@ class SyncRepository @Inject constructor(
         val deferred = push.heldBack + applied.deferred
         saveDeferred(deferred)
 
-        if (applied.serverOutdated || pull.serverVersion < 2) {
+        if (applied.serverOutdated || pull.serverVersion < 3) {
             return SyncResult.Error(
                 "The sync server is running an older version that this app can't fully sync with. " +
                     "Update the BabyDataLog server container, then sync again."

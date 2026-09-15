@@ -129,6 +129,11 @@ class SleepViewModel @Inject constructor(
             return
         }
 
+        if (!state.stillAsleep && state.endTimeMs == null) {
+            _formState.update { it.copy(error = "Please set an end time, or check \"Still asleep\"") }
+            return
+        }
+
         _formState.update { it.copy(isSaving = true, error = null) }
 
         viewModelScope.launch {

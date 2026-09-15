@@ -83,7 +83,7 @@ class SleepRepository @Inject constructor(
 
     suspend fun deleteSleep(session: SleepSession) {
         val now = System.currentTimeMillis()
-        sleepDao.updateSleep(session.copy(deletedAtMs = now, updatedAtMs = now))
+        sleepDao.deleteSleep(session.copy(deletedAtMs = now, updatedAtMs = now))
         syncScheduler.requestSyncSoon()
     }
 }

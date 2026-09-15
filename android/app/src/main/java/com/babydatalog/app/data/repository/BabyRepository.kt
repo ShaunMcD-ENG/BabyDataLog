@@ -5,6 +5,7 @@ import com.babydatalog.app.data.database.dao.FeedingDao
 import com.babydatalog.app.data.database.dao.GrowthDao
 import com.babydatalog.app.data.database.dao.MilestoneDao
 import com.babydatalog.app.data.database.dao.NappyDao
+import com.babydatalog.app.data.database.dao.SleepDao
 import com.babydatalog.app.data.database.entity.Baby
 import com.babydatalog.app.data.sync.SyncScheduler
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +19,7 @@ class BabyRepository @Inject constructor(
     private val nappyDao: NappyDao,
     private val milestoneDao: MilestoneDao,
     private val growthDao: GrowthDao,
+    private val sleepDao: SleepDao,
     private val syncScheduler: SyncScheduler
 ) {
 
@@ -45,6 +47,7 @@ class BabyRepository @Inject constructor(
         nappyDao.softDeleteAllForBaby(baby.id, now)
         milestoneDao.softDeleteAllForBaby(baby.id, now)
         growthDao.softDeleteAllForBaby(baby.id, now)
+        sleepDao.softDeleteAllForBaby(baby.id, now)
         babyDao.updateBaby(baby.copy(deletedAtMs = now, updatedAtMs = now))
         syncScheduler.requestSyncSoon()
     }

@@ -10,6 +10,7 @@ import com.babydatalog.app.data.repository.FeedingRepository
 import com.babydatalog.app.data.repository.GrowthRepository
 import com.babydatalog.app.data.repository.MilestoneRepository
 import com.babydatalog.app.data.repository.NappyRepository
+import com.babydatalog.app.data.repository.SleepRepository
 import com.babydatalog.app.utils.BackupException
 import com.babydatalog.app.utils.ImportException
 import com.babydatalog.app.utils.exportBackup
@@ -41,7 +42,8 @@ class ExportViewModel @Inject constructor(
     private val feedingRepository: FeedingRepository,
     private val nappyRepository: NappyRepository,
     private val milestoneRepository: MilestoneRepository,
-    private val growthRepository: GrowthRepository
+    private val growthRepository: GrowthRepository,
+    private val sleepRepository: SleepRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ExportImportState())
@@ -57,8 +59,9 @@ class ExportViewModel @Inject constructor(
                 val allNappies = allBabies.flatMap { nappyRepository.getNappiesForBaby(it.id).first() }
                 val allMilestones = allBabies.flatMap { milestoneRepository.getMilestonesForBaby(it.id).first() }
                 val allGrowth = allBabies.flatMap { growthRepository.getMeasurementsForBaby(it.id).first() }
+                val allSleep = allBabies.flatMap { sleepRepository.getSleepSessionsForBaby(it.id).first() }
 
-                val jsonString = exportToJson(allBabies, allFeedings, allNappies, allMilestones, allGrowth)
+                val jsonString = exportToJson(allBabies, allFeedings, allNappies, allMilestones, allGrowth, allSleep)
 
                 withContext(Dispatchers.IO) {
                     contentResolver.openOutputStream(uri)?.use { outputStream ->
@@ -90,8 +93,9 @@ class ExportViewModel @Inject constructor(
                 val allNappies = allBabies.flatMap { nappyRepository.getNappiesForBaby(it.id).first() }
                 val allMilestones = allBabies.flatMap { milestoneRepository.getMilestonesForBaby(it.id).first() }
                 val allGrowth = allBabies.flatMap { growthRepository.getMeasurementsForBaby(it.id).first() }
+                val allSleep = allBabies.flatMap { sleepRepository.getSleepSessionsForBaby(it.id).first() }
 
-                val csvMap = exportToCsv(allBabies, allFeedings, allNappies, allMilestones, allGrowth)
+                val csvMap = exportToCsv(allBabies, allFeedings, allNappies, allMilestones, allGrowth, allSleep)
 
                 withContext(Dispatchers.IO) {
                     val combinedContent = csvMap.entries.joinToString(separator = "\n\n") { (name, content) ->
@@ -137,6 +141,7 @@ class ExportViewModel @Inject constructor(
                 var nappiesImported = 0
                 var milestonesImported = 0
                 var growthImported = 0
+                var sleepImported = 0
 
                 // Insert babies first and build old-ID → new-ID map so FK references stay valid
                 val babyIdMap = mutableMapOf<Long, Long>()
@@ -188,12 +193,23 @@ class ExportViewModel @Inject constructor(
                     } catch (_: Exception) { }
                 }
 
+                exportData.sleepSessions.forEach { sleepExport ->
+                    try {
+                        val newBabyId = babyIdMap[sleepExport.babyId] ?: sleepExport.babyId
+                        sleepRepository.upsertSleep(
+                            sleepExport.toEntity().copy(id = 0L, babyId = newBabyId)
+                        )
+                        sleepImported++
+                    } catch (_: Exception) { }
+                }
+
                 _state.update {
                     it.copy(
                         isLoading = false,
                         successMessage = "Import complete: $babiesImported babies, " +
                             "$feedingsImported feedings, $nappiesImported nappy changes, " +
-                            "$milestonesImported milestones, $growthImported growth records"
+                            "$milestonesImported milestones, $growthImported growth records, " +
+                            "$sleepImported sleep sessions"
                     )
                 }
             } catch (e: ImportException) {
@@ -217,8 +233,9 @@ class ExportViewModel @Inject constructor(
                 val allNappies = allBabies.flatMap { nappyRepository.getNappiesForBaby(it.id).first() }
                 val allMilestones = allBabies.flatMap { milestoneRepository.getMilestonesForBaby(it.id).first() }
                 val allGrowth = allBabies.flatMap { growthRepository.getMeasurementsForBaby(it.id).first() }
+                val allSleep = allBabies.flatMap { sleepRepository.getSleepSessionsForBaby(it.id).first() }
 
-                val csv = exportBackup(allBabies, allFeedings, allNappies, allMilestones, allGrowth, BuildConfig.VERSION_CODE)
+                val csv = exportBackup(allBabies, allFeedings, allNappies, allMilestones, allGrowth, BuildConfig.VERSION_CODE, allSleep)
 
                 withContext(Dispatchers.IO) {
                     contentResolver.openOutputStream(uri)?.use { stream ->
@@ -267,6 +284,10 @@ class ExportViewModel @Inject constructor(
                     val newBabyId = babyIdMap[growth.babyId] ?: growth.babyId
                     growthRepository.upsertMeasurement(growth.copy(id = 0, babyId = newBabyId))
                 }
+                parsed.sleepSessions.forEach { sleep ->
+                    val newBabyId = babyIdMap[sleep.babyId] ?: sleep.babyId
+                    sleepRepository.upsertSleep(sleep.copy(id = 0, babyId = newBabyId))
+                }
 
                 _state.update {
                     it.copy(
@@ -274,7 +295,7 @@ class ExportViewModel @Inject constructor(
                         successMessage = "Backup restored: ${parsed.babies.size} babies, " +
                             "${parsed.feedings.size} feedings, " +
                             "${parsed.nappies.size} nappies, ${parsed.growthMeasurements.size} growth records, " +
-                            "${parsed.milestones.size} milestones"
+                            "${parsed.milestones.size} milestones, ${parsed.sleepSessions.size} sleep sessions"
                     )
                 }
             } catch (e: BackupException) {

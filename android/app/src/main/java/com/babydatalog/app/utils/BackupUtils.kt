@@ -11,6 +11,8 @@ import com.babydatalog.app.data.database.entity.MilestoneCategory
 import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.database.entity.NappyChange
 import com.babydatalog.app.data.database.entity.PooColour
+import com.babydatalog.app.data.database.entity.SleepSession
+import com.babydatalog.app.data.database.entity.SleepType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -36,7 +38,8 @@ data class ParsedBackup(
     val feedings: List<FeedingSession>,
     val nappies: List<NappyChange>,
     val milestones: List<Milestone>,
-    val growthMeasurements: List<GrowthMeasurement>
+    val growthMeasurements: List<GrowthMeasurement>,
+    val sleepSessions: List<SleepSession> = emptyList()
 )
 
 class BackupException(message: String) : Exception(message)
@@ -67,7 +70,8 @@ suspend fun exportBackup(
     nappies: List<NappyChange>,
     milestones: List<Milestone>,
     growth: List<GrowthMeasurement>,
-    appVersion: Int
+    appVersion: Int,
+    sleepSessions: List<SleepSession> = emptyList()
 ): String = withContext(Dispatchers.IO) {
     buildString {
         // Header
@@ -163,6 +167,22 @@ suspend fun exportBackup(
                 "${g.createdAtMs}"
             )
         }
+
+        // [SLEEP]
+        appendLine("[SLEEP]")
+        appendLine("id,syncUuid,babyId,startTimeMs,endTimeMs,type,notes,createdAtMs")
+        sleepSessions.forEach { s ->
+            appendLine(
+                "${s.id}," +
+                "${escapeCsv(s.syncUuid)}," +
+                "${s.babyId}," +
+                "${s.startTimeMs}," +
+                "${s.endTimeMs ?: ""}," +
+                "${s.type.name}," +
+                "${escapeCsv(s.notes)}," +
+                "${s.createdAtMs}"
+            )
+        }
     }
 }
 
@@ -247,13 +267,19 @@ suspend fun parseBackup(content: String): ParsedBackup = withContext(Dispatchers
         ?.mapNotNull { parseGrowthRow(it) }
         ?: emptyList()
 
+    val sleepSessions = convertedSections["SLEEP"]
+        ?.drop(1)
+        ?.mapNotNull { parseSleepRow(it) }
+        ?: emptyList()
+
     ParsedBackup(
         header = header,
         babies = babies,
         feedings = feedings,
         nappies = nappies,
         milestones = milestones,
-        growthMeasurements = growth
+        growthMeasurements = growth,
+        sleepSessions = sleepSessions
     )
 }
 
@@ -481,6 +507,30 @@ private fun parseGrowthRow(line: String): GrowthMeasurement? {
             notes = if (hasNewFields) cols[12].orNullIfBlank() else cols[7].orNullIfBlank(),
             createdAtMs = if (hasNewFields) cols[13].toLongOrNullSafe() ?: System.currentTimeMillis()
                           else cols[8].toLongOrNullSafe() ?: System.currentTimeMillis()
+        )
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private fun parseSleepRow(line: String): SleepSession? {
+    val cols = parseCsvLine(line)
+    if (cols.size < 8) return null
+    return try {
+        val type = try {
+            cols[5].trim().let { if (it.isBlank()) SleepType.NAP else SleepType.valueOf(it) }
+        } catch (e: IllegalArgumentException) {
+            SleepType.NAP
+        }
+        SleepSession(
+            id = 0L,
+            syncUuid = cols[1].orNullIfBlank() ?: UUID.randomUUID().toString(),
+            babyId = cols[2].toLongOrNullSafe() ?: return null,
+            startTimeMs = cols[3].toLongOrNullSafe() ?: return null,
+            endTimeMs = cols[4].toLongOrNullSafe(),
+            type = type,
+            notes = cols[6].orNullIfBlank(),
+            createdAtMs = cols[7].toLongOrNullSafe() ?: System.currentTimeMillis()
         )
     } catch (e: Exception) {
         null

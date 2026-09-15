@@ -11,6 +11,8 @@ import com.babydatalog.app.data.database.entity.MilestoneCategory
 import com.babydatalog.app.data.database.entity.NappyAmount
 import com.babydatalog.app.data.database.entity.NappyChange
 import com.babydatalog.app.data.database.entity.PooColour
+import com.babydatalog.app.data.database.entity.SleepSession
+import com.babydatalog.app.data.database.entity.SleepType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -96,6 +98,18 @@ data class GrowthExport(
 )
 
 @Serializable
+data class SleepExport(
+    val id: Long,
+    val syncUuid: String,
+    val babyId: Long,
+    val startTimeMs: Long,
+    val endTimeMs: Long?,
+    val type: String,
+    val notes: String?,
+    val createdAtMs: Long
+)
+
+@Serializable
 data class ExportData(
     val schemaVersion: Int = 1,
     val exportedAtMs: Long,
@@ -103,7 +117,8 @@ data class ExportData(
     val feedingSessions: List<FeedingExport>,
     val nappyChanges: List<NappyExport>,
     val milestones: List<MilestoneExport>,
-    val growthMeasurements: List<GrowthExport> = emptyList()
+    val growthMeasurements: List<GrowthExport> = emptyList(),
+    val sleepSessions: List<SleepExport> = emptyList()
 )
 
 // ─── Entity → Export extension functions ──────────────────────────────────────
@@ -236,6 +251,28 @@ fun GrowthExport.toEntity(): GrowthMeasurement = GrowthMeasurement(
     createdAtMs = createdAtMs
 )
 
+fun SleepSession.toExport(): SleepExport = SleepExport(
+    id = id,
+    syncUuid = syncUuid,
+    babyId = babyId,
+    startTimeMs = startTimeMs,
+    endTimeMs = endTimeMs,
+    type = type.name,
+    notes = notes,
+    createdAtMs = createdAtMs
+)
+
+fun SleepExport.toEntity(): SleepSession = SleepSession(
+    id = id,
+    syncUuid = syncUuid,
+    babyId = babyId,
+    startTimeMs = startTimeMs,
+    endTimeMs = endTimeMs,
+    type = SleepType.valueOf(type),
+    notes = notes,
+    createdAtMs = createdAtMs
+)
+
 // ─── JSON serializer ───────────────────────────────────────────────────────────
 
 private val json = Json {
@@ -266,7 +303,8 @@ suspend fun exportToJson(
     feedings: List<FeedingSession>,
     nappies: List<NappyChange>,
     milestones: List<Milestone>,
-    growth: List<GrowthMeasurement>
+    growth: List<GrowthMeasurement>,
+    sleepSessions: List<SleepSession> = emptyList()
 ): String = withContext(Dispatchers.IO) {
     val exportData = ExportData(
         exportedAtMs = System.currentTimeMillis(),
@@ -274,7 +312,8 @@ suspend fun exportToJson(
         feedingSessions = feedings.map { it.toExport() },
         nappyChanges = nappies.map { it.toExport() },
         milestones = milestones.map { it.toExport() },
-        growthMeasurements = growth.map { it.toExport() }
+        growthMeasurements = growth.map { it.toExport() },
+        sleepSessions = sleepSessions.map { it.toExport() }
     )
     json.encodeToString(exportData)
 }
@@ -295,7 +334,8 @@ suspend fun exportToCsv(
     feedings: List<FeedingSession>,
     nappies: List<NappyChange>,
     milestones: List<Milestone>,
-    growth: List<GrowthMeasurement>
+    growth: List<GrowthMeasurement>,
+    sleepSessions: List<SleepSession> = emptyList()
 ): Map<String, String> = withContext(Dispatchers.IO) {
     val result = mutableMapOf<String, String>()
 
@@ -381,6 +421,23 @@ suspend fun exportToCsv(
                 "${g.armLengthCm ?: ""}," +
                 "${g.backLengthCm ?: ""}," +
                 escapeCsv(g.notes)
+            )
+        }
+    }
+
+    // sleep.csv
+    result["sleep.csv"] = buildString {
+        appendLine("id,babyId,date,time,endDate,endTime,type,notes")
+        sleepSessions.forEach { s ->
+            appendLine(
+                "${s.id}," +
+                "${s.babyId}," +
+                "${s.startTimeMs.toIsoDate()}," +
+                "${s.startTimeMs.toIsoTime()}," +
+                "${s.endTimeMs?.toIsoDate() ?: ""}," +
+                "${s.endTimeMs?.toIsoTime() ?: ""}," +
+                "${s.type.name}," +
+                escapeCsv(s.notes)
             )
         }
     }
