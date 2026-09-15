@@ -57,7 +57,7 @@ fun SleepFormScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(sleepId) {
-        if (sleepId > 0L) viewModel.loadSleep(sleepId)
+        if (sleepId > 0L) viewModel.loadSleep(sleepId) else viewModel.resetForm()
     }
 
     LaunchedEffect(state.saveSuccess) {
