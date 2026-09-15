@@ -61,3 +61,63 @@ fun periodStartMs(
     SleepStatsPeriod.LAST_365_DAYS -> nowMs - 365 * DAY_MS
     SleepStatsPeriod.ALL_TIME -> sessions.minOfOrNull { it.startTimeMs } ?: nowMs
 }
+
+data class SleepLensStats(
+    val sessionCount: Int?,             // null for the Combined lens — summing split-session counts across Nap+Night double-counts, so Combined only reports duration (spec §5.2)
+    val totalMinutes: Float,
+    val avgMinutesPerDay: Float,
+    val avgSessionsPerDay: Float?,
+    val avgSessionDurationMinutes: Float?
+)
+
+data class SleepStats(val nap: SleepLensStats, val night: SleepLensStats, val combined: SleepLensStats)
+
+private fun lensStats(slices: List<DaySlice>, dayCount: Float, includeCount: Boolean): SleepLensStats {
+    val totalMinutes = slices.sumOf { (it.endMs - it.startMs) / 60_000.0 }.toFloat()
+    if (!includeCount) {
+        return SleepLensStats(
+            sessionCount = null,
+            totalMinutes = totalMinutes,
+            avgMinutesPerDay = totalMinutes / dayCount,
+            avgSessionsPerDay = null,
+            avgSessionDurationMinutes = null
+        )
+    }
+    val count = slices.size
+    return SleepLensStats(
+        sessionCount = count,
+        totalMinutes = totalMinutes,
+        avgMinutesPerDay = totalMinutes / dayCount,
+        avgSessionsPerDay = count / dayCount,
+        avgSessionDurationMinutes = if (count > 0) totalMinutes / count else null
+    )
+}
+
+/**
+ * Per-lens (Nap / Night / Combined) totals for the selected period. Open
+ * sessions are excluded entirely (spec §5.2 / Q19); overnight sessions are
+ * split at local midnight first (spec §5.1) so a session that only partly
+ * overlaps the period contributes only its overlapping portion.
+ */
+fun computeSleepStats(
+    sessions: List<SleepSession>,
+    period: SleepStatsPeriod,
+    nowMs: Long = System.currentTimeMillis(),
+    zone: ZoneId = ZoneId.systemDefault()
+): SleepStats {
+    val closed = sessions.filter { it.endTimeMs != null }
+    val startMs = periodStartMs(period, closed, nowMs, zone)
+    val dayCount = ((nowMs - startMs) / DAY_MS.toDouble()).coerceAtLeast(1.0).toFloat()
+
+    val allSlices = closed.flatMap { splitAcrossDays(it, zone) }
+        .filter { it.startMs < nowMs && it.endMs > startMs }
+
+    val napSlices = allSlices.filter { it.type == SleepType.NAP }
+    val nightSlices = allSlices.filter { it.type == SleepType.NIGHT }
+
+    return SleepStats(
+        nap = lensStats(napSlices, dayCount, includeCount = true),
+        night = lensStats(nightSlices, dayCount, includeCount = true),
+        combined = lensStats(allSlices, dayCount, includeCount = false)
+    )
+}

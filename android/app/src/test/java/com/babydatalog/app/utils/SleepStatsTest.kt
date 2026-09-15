@@ -150,4 +150,62 @@ class SleepStatsTest {
         val now = 1_700_000_000_000L
         assertEquals(now, periodStartMs(SleepStatsPeriod.ALL_TIME, emptyList(), now, UTC))
     }
+
+    // ─── computeSleepStats ───────────────────────────────────────────────────
+
+    @Test
+    fun computeSleepStats_emptySessions_allZero() {
+        val stats = computeSleepStats(emptyList(), SleepStatsPeriod.LAST_7_DAYS, nowMs = 1_700_000_000_000L, zone = UTC)
+        assertEquals(0, stats.nap.sessionCount)
+        assertEquals(0f, stats.nap.totalMinutes, 0.01f)
+        assertEquals(0, stats.night.sessionCount)
+        assertEquals(null, stats.combined.sessionCount)
+        assertEquals(0f, stats.combined.totalMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeSleepStats_napsOnly_countedSeparatelyFromNight() {
+        val now = 1_700_000_000_000L
+        val sessions = listOf(
+            session(id = 1, startMs = now - 3_600_000L, endMs = now - 1_800_000L, type = SleepType.NAP),   // 30 min nap
+            session(id = 2, startMs = now - 7_200_000L, endMs = now - 5_400_000L, type = SleepType.NAP),   // 30 min nap
+            session(id = 3, startMs = now - 36_000_000L, endMs = now - 7_200_000L, type = SleepType.NIGHT) // 8h "night"
+        )
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
+
+        assertEquals(2, stats.nap.sessionCount)
+        assertEquals(60f, stats.nap.totalMinutes, 0.01f)
+        assertEquals(1, stats.night.sessionCount)
+        assertEquals(480f, stats.night.totalMinutes, 0.01f)
+        // combined has no session count but sums both
+        assertEquals(null, stats.combined.sessionCount)
+        assertEquals(540f, stats.combined.totalMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeSleepStats_openSession_excludedEntirely() {
+        val now = 1_700_000_000_000L
+        val sessions = listOf(
+            session(id = 1, startMs = now - 1_800_000L, endMs = null, type = SleepType.NAP) // still asleep
+        )
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
+        assertEquals(0, stats.nap.sessionCount)
+        assertEquals(0f, stats.nap.totalMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeSleepStats_overnightSession_countsOnBothDays() {
+        val day1Start = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val now = day1Start + 40 * 3_600_000L // well into day 2
+        val overnight = session(
+            id = 1,
+            startMs = day1Start + 20 * 3_600_000L, // 8pm day 1
+            endMs = day1Start + 30 * 3_600_000L,   // 6am day 2
+            type = SleepType.NIGHT
+        )
+        val stats = computeSleepStats(listOf(overnight), SleepStatsPeriod.LAST_7_DAYS, now, UTC)
+        // one physical session, split across 2 days -> count of 2 (spec §5.1's stated consequence)
+        assertEquals(2, stats.night.sessionCount)
+        assertEquals(600f, stats.night.totalMinutes, 0.01f) // 10 hours total, unaffected by the split
+    }
 }
