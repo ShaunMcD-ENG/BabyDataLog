@@ -110,7 +110,11 @@ fun computeSleepStats(
     val dayCount = ((nowMs - startMs) / DAY_MS.toDouble()).coerceAtLeast(1.0).toFloat()
 
     val allSlices = closed.flatMap { splitAcrossDays(it, zone) }
-        .filter { it.startMs < nowMs && it.endMs > startMs }
+        .mapNotNull { slice ->
+            val clippedStart = maxOf(slice.startMs, startMs)
+            val clippedEnd = minOf(slice.endMs, nowMs)
+            if (clippedStart < clippedEnd) slice.copy(startMs = clippedStart, endMs = clippedEnd) else null
+        }
 
     val napSlices = allSlices.filter { it.type == SleepType.NAP }
     val nightSlices = allSlices.filter { it.type == SleepType.NIGHT }

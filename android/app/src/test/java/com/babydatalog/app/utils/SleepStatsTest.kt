@@ -208,4 +208,31 @@ class SleepStatsTest {
         assertEquals(2, stats.night.sessionCount)
         assertEquals(600f, stats.night.totalMinutes, 0.01f) // 10 hours total, unaffected by the split
     }
+
+    @Test
+    fun computeSleepStats_sessionCrossesPeriodsStartBoundary_countsOnlyInPeriodPortion() {
+        // Use a "now" at midnight to avoid timezone/day-boundary complications
+        val dayStart = LocalDate.of(2024, 1, 8).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val now = dayStart // 2024-01-08 00:00 UTC, exactly at midnight
+        // For LAST_7_DAYS: period starts at now - 7*DAY_MS = 2024-01-01 00:00 UTC
+        val periodStart = now - 7 * 86_400_000L
+
+        // Session: starts 2 hours before period boundary, ends 4 hours after it
+        // Both on the same day as period start, which is 2024-01-01
+        // Starts: 2024-01-01 22:00 (previous day, or 2 hours before midnight on Jan 1)
+        // Ends: 2024-01-01 04:00
+        val sessions = listOf(
+            session(
+                id = 1,
+                startMs = periodStart - 2 * 3_600_000L,   // 2 hours before period start
+                endMs = periodStart + 4 * 3_600_000L,     // 4 hours after period start
+                type = SleepType.NAP
+            )
+        )
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
+
+        // After clipping to [periodStart, now], only the 4-hour portion after periodStart counts
+        assertEquals(1, stats.nap.sessionCount)
+        assertEquals(240f, stats.nap.totalMinutes, 0.01f) // 4 hours = 240 minutes
+    }
 }
