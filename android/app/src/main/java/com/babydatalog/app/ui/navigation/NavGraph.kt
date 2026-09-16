@@ -1,6 +1,12 @@
 package com.babydatalog.app.ui.navigation
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.BabyChangingStation
@@ -12,9 +18,10 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -165,25 +172,35 @@ fun NavGraph(
         modifier = modifier,
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
-                    val currentDestination = navBackStackEntry?.destination
-                    bottomNavItems.forEach { item ->
-                        NavigationBarItem(
-                            icon = item.icon,
-                            label = { Text(item.label) },
-                            selected = currentDestination?.hierarchy?.any { it.route == item.route } == true,
-                            onClick = {
-                                navController.navigate(item.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        // Don't save state when leaving a sub-screen (e.g. Settings),
-                                        // so it doesn't get restored when returning to the Home tab.
-                                        saveState = currentRoute in tabRootRoutes
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
+                val currentDestination = navBackStackEntry?.destination
+                Surface(
+                    color = NavigationBarDefaults.containerColor,
+                    tonalElevation = NavigationBarDefaults.Elevation
+                ) {
+                    Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+                        bottomNavItems.chunked(4).forEach { rowItems ->
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                rowItems.forEach { item ->
+                                    NavigationBarItem(
+                                        modifier = Modifier.weight(1f),
+                                        icon = item.icon,
+                                        label = { Text(item.label) },
+                                        selected = currentDestination?.hierarchy?.any { it.route == item.route } == true,
+                                        onClick = {
+                                            navController.navigate(item.route) {
+                                                popUpTo(navController.graph.findStartDestination().id) {
+                                                    // Don't save state when leaving a sub-screen (e.g. Settings),
+                                                    // so it doesn't get restored when returning to the Home tab.
+                                                    saveState = currentRoute in tabRootRoutes
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
+                                            }
+                                        }
+                                    )
                                 }
                             }
-                        )
+                        }
                     }
                 }
             }
