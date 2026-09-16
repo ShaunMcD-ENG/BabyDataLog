@@ -8,6 +8,7 @@ const TABLES = [
   "nappy_changes",
   "milestones",
   "growth_measurements",
+  "sleep_sessions",
   "sync_log",
   "devices",
 ];
