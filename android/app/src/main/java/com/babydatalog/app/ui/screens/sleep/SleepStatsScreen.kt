@@ -32,6 +32,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.babydatalog.app.utils.DailySleepTotal
+import com.babydatalog.app.utils.MonthlySleepAverage
 import com.babydatalog.app.utils.SleepHistogram
 import com.babydatalog.app.utils.SleepLens
 import com.babydatalog.app.utils.SleepLensStats
@@ -42,19 +44,30 @@ import com.patrykandpatrick.vico.compose.axis.horizontal.rememberBottomAxis
 import com.patrykandpatrick.vico.compose.axis.vertical.rememberStartAxis
 import com.patrykandpatrick.vico.compose.chart.Chart
 import com.patrykandpatrick.vico.compose.chart.column.columnChart
+import com.patrykandpatrick.vico.compose.chart.line.lineChart
 import com.patrykandpatrick.vico.compose.m3.style.m3ChartStyle
 import com.patrykandpatrick.vico.compose.style.ProvideChartStyle
 import com.patrykandpatrick.vico.core.axis.AxisItemPlacer
+import com.patrykandpatrick.vico.core.chart.values.AxisValuesOverrider
 import com.patrykandpatrick.vico.core.entry.ChartEntryModelProducer
 import com.patrykandpatrick.vico.core.entry.entryOf
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 
 private fun periodLabel(period: SleepStatsPeriod): String = when (period) {
     SleepStatsPeriod.TODAY -> "Today"
+    SleepStatsPeriod.LAST_24_HOURS -> "Last 24 Hours"
     SleepStatsPeriod.LAST_7_DAYS -> "Last 7 Days"
     SleepStatsPeriod.LAST_30_DAYS -> "Last 30 Days"
     SleepStatsPeriod.LAST_365_DAYS -> "Last Year"
     SleepStatsPeriod.ALL_TIME -> "All Time"
 }
+
+// TODAY/LAST_24_HOURS span at most one day, so the hourly chart shows a literal minute
+// count rather than an average across multiple days.
+private fun isSingleDayPeriod(period: SleepStatsPeriod): Boolean =
+    period == SleepStatsPeriod.TODAY || period == SleepStatsPeriod.LAST_24_HOURS
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,6 +79,8 @@ fun SleepStatsScreen(
     val period by viewModel.period.collectAsStateWithLifecycle()
     val lens by viewModel.lens.collectAsStateWithLifecycle()
     val histogram by viewModel.histogram.collectAsStateWithLifecycle()
+    val dailyTotals by viewModel.dailyTotals.collectAsStateWithLifecycle()
+    val monthlyAverages by viewModel.monthlyAverages.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Sleep Stats") }) }
@@ -86,29 +101,37 @@ fun SleepStatsScreen(
                 Text("Back to Sleep Log")
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SleepStatsPeriod.entries.forEach { p ->
-                    FilterChip(
-                        selected = period == p,
-                        onClick = { viewModel.selectPeriod(p) },
-                        label = { Text(periodLabel(p)) }
-                    )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SleepStatsPeriod.entries.chunked(3).forEach { rowPeriods ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowPeriods.forEach { p ->
+                            FilterChip(
+                                selected = period == p,
+                                onClick = { viewModel.selectPeriod(p) },
+                                label = { Text(periodLabel(p)) }
+                            )
+                        }
+                    }
                 }
             }
 
+            SleepLensCard(title = "Wake Window", stats = stats.wakeWindow)
             SleepLensCard(title = "Naps", stats = stats.nap)
             SleepLensCard(title = "Night Sleep", stats = stats.night)
-            SleepLensCard(title = "Wake Window", stats = stats.wakeWindow)
             SleepLensCard(title = "Total (Naps + Night)", stats = stats.combined)
 
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Sleep by Hour of Day", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = if (isSingleDayPeriod(period)) "Minutes Asleep by Hour of Day" else "Average Minutes Asleep by Hour of Day",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -133,6 +156,28 @@ fun SleepStatsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     SleepHistogramChart(histogram = histogram)
                 }
+            }
+
+            when (period) {
+                SleepStatsPeriod.LAST_7_DAYS, SleepStatsPeriod.LAST_30_DAYS -> {
+                    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Total Sleep by Day", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            DailySleepChart(totals = dailyTotals)
+                        }
+                    }
+                }
+                SleepStatsPeriod.LAST_365_DAYS -> {
+                    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Average Daily Sleep by Month", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            MonthlySleepChart(averages = monthlyAverages)
+                        }
+                    }
+                }
+                else -> {}
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -167,20 +212,48 @@ private fun SleepStatRow(label: String, value: String) {
 
 @Composable
 private fun SleepHistogramChart(histogram: SleepHistogram) {
-    // Vico's Chart() leaves stale (blank) columns on screen when only chartModelProducer's
+    // Vico's Chart() leaves stale (blank) content on screen when only chartModelProducer's
     // *content* changes across recompositions -- reproduced independently of the ViewModel/
     // StateFlow plumbing: a chart that renders 24 all-zero entries once, then receives an
     // update with real values, keeps drawing nothing even though the axis scale updates
     // correctly and the producer's entries are verifiably correct (confirmed via logging and
     // via a hardcoded-producer control that rendered fine). Keying the whole chart subtree on
-    // `histogram` forces Vico to fully discard and rebuild its internal chart state instead of
+    // the data forces Vico to fully discard and rebuild its internal chart state instead of
     // reusing the stale one, which reliably fixes it. A stable producer + setEntries(), and
     // diffAnimationSpec = null, were both tried first and did NOT fix this on their own.
     key(histogram) {
         val entries = remember(histogram) {
-            histogram.hourlyPercent.mapIndexed { hour, pct -> entryOf(hour.toFloat(), pct) }
+            histogram.hourlyMinutesAsleep.mapIndexed { hour, minutes -> entryOf(hour.toFloat(), minutes) }
         }
         val producer = remember(histogram) { ChartEntryModelProducer(entries) }
+
+        ProvideChartStyle(m3ChartStyle()) {
+            Chart(
+                // Default point connector uses cubic bezier curves between points.
+                chart = lineChart(axisValuesOverrider = AxisValuesOverrider.fixed(minY = 0f, maxY = 60f)),
+                chartModelProducer = producer,
+                startAxis = rememberStartAxis(
+                    itemPlacer = AxisItemPlacer.Vertical.default(maxItemCount = 5),
+                    valueFormatter = { value, _ -> "${value.toInt()}m" }
+                ),
+                bottomAxis = rememberBottomAxis(
+                    valueFormatter = { value, _ -> if (value.toInt() % 2 == 0) "${value.toInt()}h" else "" }
+                ),
+                modifier = Modifier.fillMaxWidth().height(200.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun DailySleepChart(totals: List<DailySleepTotal>) {
+    key(totals) {
+        val dateFormatter = remember { DateTimeFormatter.ofPattern("d/M") }
+        val labels = remember(totals) { totals.map { dateFormatter.format(it.date) } }
+        val entries = remember(totals) {
+            totals.mapIndexed { index, total -> entryOf(index.toFloat(), total.totalMinutes / 60f) }
+        }
+        val producer = remember(totals) { ChartEntryModelProducer(entries) }
 
         ProvideChartStyle(m3ChartStyle()) {
             Chart(
@@ -188,10 +261,38 @@ private fun SleepHistogramChart(histogram: SleepHistogram) {
                 chartModelProducer = producer,
                 startAxis = rememberStartAxis(
                     itemPlacer = AxisItemPlacer.Vertical.default(maxItemCount = 5),
-                    valueFormatter = { value, _ -> "${value.toInt()}%" }
+                    valueFormatter = { value, _ -> "%.1fh".format(value) }
                 ),
                 bottomAxis = rememberBottomAxis(
-                    valueFormatter = { value, _ -> if (value.toInt() % 2 == 0) "${value.toInt()}h" else "" }
+                    valueFormatter = { value, _ -> labels.getOrNull(value.toInt()) ?: "" }
+                ),
+                modifier = Modifier.fillMaxWidth().height(200.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MonthlySleepChart(averages: List<MonthlySleepAverage>) {
+    key(averages) {
+        val labels = remember(averages) {
+            averages.map { it.yearMonth.month.getDisplayName(TextStyle.SHORT, Locale.getDefault()) }
+        }
+        val entries = remember(averages) {
+            averages.mapIndexed { index, avg -> entryOf(index.toFloat(), avg.avgDailyMinutes / 60f) }
+        }
+        val producer = remember(averages) { ChartEntryModelProducer(entries) }
+
+        ProvideChartStyle(m3ChartStyle()) {
+            Chart(
+                chart = columnChart(),
+                chartModelProducer = producer,
+                startAxis = rememberStartAxis(
+                    itemPlacer = AxisItemPlacer.Vertical.default(maxItemCount = 5),
+                    valueFormatter = { value, _ -> "%.1fh".format(value) }
+                ),
+                bottomAxis = rememberBottomAxis(
+                    valueFormatter = { value, _ -> labels.getOrNull(value.toInt()) ?: "" }
                 ),
                 modifier = Modifier.fillMaxWidth().height(200.dp)
             )

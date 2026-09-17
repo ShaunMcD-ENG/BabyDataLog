@@ -28,6 +28,9 @@ class SleepRepository @Inject constructor(
     fun getOpenSleepSession(babyId: Long): Flow<SleepSession?> =
         sleepDao.getOpenSleepSession(babyId)
 
+    fun getLastClosedSleepSession(babyId: Long): Flow<SleepSession?> =
+        sleepDao.getLastClosedSleepSession(babyId)
+
     private suspend fun newSyncUuid(babyId: Long, startTimeMs: Long): String {
         val babySyncUuid = babyDao.getBabyByIdOnce(babyId)?.syncUuid
         return if (babySyncUuid != null) {

@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.ZoneOffset
 
@@ -307,6 +308,14 @@ class SleepStatsTest {
         assertEquals(120f, stats.nap.totalMinutes, 0.01f) // Only 2 in-period hours, not 4 total
     }
 
+    // ─── periodStartMs: LAST_24_HOURS ───────────────────────────────────────
+
+    @Test
+    fun periodStartMs_last24Hours_isExactlyOneDayBeforeNow() {
+        val now = 1_700_000_000_000L
+        assertEquals(now - 86_400_000L, periodStartMs(SleepStatsPeriod.LAST_24_HOURS, emptyList(), now, UTC))
+    }
+
     // ─── computeSleepHistogram ───────────────────────────────────────────────
 
     @Test
@@ -318,24 +327,34 @@ class SleepStatsTest {
 
         val histogram = computeSleepHistogram(listOf(nap), SleepStatsPeriod.LAST_7_DAYS, SleepLens.NAP, now, UTC)
 
-        assertEquals(24, histogram.hourlyPercent.size)
-        assertTrue("hour 14 should show >0%", histogram.hourlyPercent[14] > 0f)
-        assertTrue("hour 15 should show >0%", histogram.hourlyPercent[15] > 0f)
-        assertEquals(0f, histogram.hourlyPercent[10], 0.01f)
+        assertEquals(24, histogram.hourlyMinutesAsleep.size)
+        assertTrue("hour 14 should show >0 min", histogram.hourlyMinutesAsleep[14] > 0f)
+        assertTrue("hour 15 should show >0 min", histogram.hourlyMinutesAsleep[15] > 0f)
+        assertEquals(0f, histogram.hourlyMinutesAsleep[10], 0.01f)
     }
 
     @Test
-    fun computeSleepHistogram_binaryPresence_notDurationWeighted() {
+    fun computeSleepHistogram_isDurationWeightedInMinutes() {
         val dayStart = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
         val now = dayStart + 2 * DAYS_MS_TEST
-        // Only 1 minute of overlap with hour 6, but the whole hour still counts as "asleep"
-        val nap = session(startMs = dayStart + 5 * 3_600_000L + 59 * 60_000L, endMs = dayStart + 6 * 3_600_000L + 1 * 60_000L)
+        // 1 minute of overlap with hour 6, 15 minutes with hour 5
+        val nap = session(startMs = dayStart + 5 * 3_600_000L + 45 * 60_000L, endMs = dayStart + 6 * 3_600_000L + 1 * 60_000L)
 
+        // period is LAST_7_DAYS -> divided by 7 days -> averaged minutes, not raw minutes
         val histogram = computeSleepHistogram(listOf(nap), SleepStatsPeriod.LAST_7_DAYS, SleepLens.NAP, now, UTC)
+        assertEquals(15f / 7f, histogram.hourlyMinutesAsleep[5], 0.01f)
+        assertEquals(1f / 7f, histogram.hourlyMinutesAsleep[6], 0.01f)
+    }
 
-        // period is LAST_7_DAYS -> denominator is 7 days, one day has presence in hour 5 and hour 6
-        assertTrue(histogram.hourlyPercent[5] > 0f)
-        assertTrue(histogram.hourlyPercent[6] > 0f)
+    @Test
+    fun computeSleepHistogram_todayOrLast24Hours_isLiteralMinutesNotAveraged() {
+        val dayStart = LocalDate.of(2024, 1, 8).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val now = dayStart + 10 * 3_600_000L // 2024-01-08 10:00
+        val nap = session(startMs = dayStart + 5 * 3_600_000L, endMs = dayStart + 5 * 3_600_000L + 30 * 60_000L) // 30 min at hour 5
+
+        val histogram = computeSleepHistogram(listOf(nap), SleepStatsPeriod.TODAY, SleepLens.NAP, now, UTC)
+        // day count is clamped to 1.0 for a same-day period -> literal 30 minutes, not divided further
+        assertEquals(30f, histogram.hourlyMinutesAsleep[5], 0.01f)
     }
 
     @Test
@@ -346,16 +365,16 @@ class SleepStatsTest {
         val night = session(id = 2, startMs = dayStart + 21 * 3_600_000L, endMs = dayStart + 23 * 3_600_000L, type = SleepType.NIGHT)
 
         val napOnly = computeSleepHistogram(listOf(nap, night), SleepStatsPeriod.LAST_7_DAYS, SleepLens.NAP, now, UTC)
-        assertEquals(0f, napOnly.hourlyPercent[21], 0.01f)
-        assertTrue(napOnly.hourlyPercent[15] > 0f)
+        assertEquals(0f, napOnly.hourlyMinutesAsleep[21], 0.01f)
+        assertTrue(napOnly.hourlyMinutesAsleep[15] > 0f)
 
         val nightOnly = computeSleepHistogram(listOf(nap, night), SleepStatsPeriod.LAST_7_DAYS, SleepLens.NIGHT, now, UTC)
-        assertEquals(0f, nightOnly.hourlyPercent[15], 0.01f)
-        assertTrue(nightOnly.hourlyPercent[21] > 0f)
+        assertEquals(0f, nightOnly.hourlyMinutesAsleep[15], 0.01f)
+        assertTrue(nightOnly.hourlyMinutesAsleep[21] > 0f)
 
         val combined = computeSleepHistogram(listOf(nap, night), SleepStatsPeriod.LAST_7_DAYS, SleepLens.COMBINED, now, UTC)
-        assertTrue(combined.hourlyPercent[15] > 0f)
-        assertTrue(combined.hourlyPercent[21] > 0f)
+        assertTrue(combined.hourlyMinutesAsleep[15] > 0f)
+        assertTrue(combined.hourlyMinutesAsleep[21] > 0f)
     }
 
     @Test
@@ -363,7 +382,7 @@ class SleepStatsTest {
         val now = 1_700_000_000_000L
         val open = session(startMs = now - 1_800_000L, endMs = null)
         val histogram = computeSleepHistogram(listOf(open), SleepStatsPeriod.LAST_7_DAYS, SleepLens.COMBINED, now, UTC)
-        assertTrue(histogram.hourlyPercent.all { it == 0f })
+        assertTrue(histogram.hourlyMinutesAsleep.all { it == 0f })
     }
 
     @Test
@@ -391,9 +410,60 @@ class SleepStatsTest {
 
         // Old buggy filter would mark hours 13, 14, 15, 16 (the entire 1pm-5pm span)
         // New clipping logic should mark only 15 and 16 (the 3pm-5pm in-period span)
-        assertEquals(0f, histogram.hourlyPercent[13], 0.01f)
-        assertEquals(0f, histogram.hourlyPercent[14], 0.01f)
-        assertTrue("hour 15 (3pm) should be marked - in period", histogram.hourlyPercent[15] > 0f)
-        assertTrue("hour 16 (4pm) should be marked - in period", histogram.hourlyPercent[16] > 0f)
+        assertEquals(0f, histogram.hourlyMinutesAsleep[13], 0.01f)
+        assertEquals(0f, histogram.hourlyMinutesAsleep[14], 0.01f)
+        assertTrue("hour 15 (3pm) should be marked - in period", histogram.hourlyMinutesAsleep[15] > 0f)
+        assertTrue("hour 16 (4pm) should be marked - in period", histogram.hourlyMinutesAsleep[16] > 0f)
+    }
+
+    // ─── computeDailySleepTotals ─────────────────────────────────────────────
+
+    @Test
+    fun computeDailySleepTotals_oneEntryPerDayIncludingEmptyDays() {
+        val day1Start = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val now = day1Start + 3 * DAYS_MS_TEST // now is 2024-01-04, 00:00
+        val nap = session(startMs = day1Start + 3_600_000L, endMs = day1Start + 3_600_000L + 30 * 60_000L) // 30 min on day 1
+
+        val totals = computeDailySleepTotals(listOf(nap), SleepStatsPeriod.LAST_7_DAYS, SleepLens.NAP, now, UTC)
+
+        // period start is 6 days before "now", so totals cover every day from periodStart's date to today
+        assertTrue(totals.isNotEmpty())
+        val day1Total = totals.find { it.date == LocalDate.of(2024, 1, 1) }
+        assertEquals(30f, day1Total?.totalMinutes ?: -1f, 0.01f)
+        // a day with no sleep is still present, with 0 minutes
+        val emptyDay = totals.find { it.date == LocalDate.of(2024, 1, 2) }
+        assertEquals(0f, emptyDay?.totalMinutes ?: -1f, 0.01f)
+    }
+
+    // ─── computeMonthlySleepAverages ─────────────────────────────────────────
+
+    @Test
+    fun computeMonthlySleepAverages_averagesOverDaysActuallyInWindow() {
+        val now = LocalDate.of(2024, 6, 15).atStartOfDay(UTC).toInstant().toEpochMilli()
+        // 60 minutes of nap sleep on each of 2 different days within June
+        val juneDay1 = LocalDate.of(2024, 6, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val juneDay2 = LocalDate.of(2024, 6, 2).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val sessions = listOf(
+            session(id = 1, startMs = juneDay1 + 3_600_000L, endMs = juneDay1 + 2 * 3_600_000L, type = SleepType.NAP), // 60 min
+            session(id = 2, startMs = juneDay2 + 3_600_000L, endMs = juneDay2 + 2 * 3_600_000L, type = SleepType.NAP)  // 60 min
+        )
+
+        val averages = computeMonthlySleepAverages(sessions, SleepLens.NAP, now, UTC)
+        val june = averages.find { it.yearMonth == YearMonth.of(2024, 6) }
+        assertTrue("June should be present", june != null)
+        // 120 total minutes over 15 days-in-window (June 1st through June 15th) = 8 min/day
+        assertEquals(120f / 15f, june!!.avgDailyMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeMonthlySleepAverages_noSessionsOutsideLast365Days() {
+        val now = LocalDate.of(2024, 6, 15).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val tooOld = session(
+            startMs = now - 400 * DAYS_MS_TEST,
+            endMs = now - 400 * DAYS_MS_TEST + 3_600_000L,
+            type = SleepType.NAP
+        )
+        val averages = computeMonthlySleepAverages(listOf(tooOld), SleepLens.NAP, now, UTC)
+        assertTrue(averages.all { it.avgDailyMinutes == 0f })
     }
 }

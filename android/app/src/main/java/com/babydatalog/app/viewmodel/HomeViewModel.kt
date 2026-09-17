@@ -75,6 +75,12 @@ class HomeViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val lastClosedSleepSession: StateFlow<SleepSession?> = _activeBabyId
+        .flatMapLatest { id ->
+            if (id != null) sleepRepository.getLastClosedSleepSession(id) else flowOf(null)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     fun quickStartSleep() {
         val babyId = _activeBabyId.value ?: return
         viewModelScope.launch {

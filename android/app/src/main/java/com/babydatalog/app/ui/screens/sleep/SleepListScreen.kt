@@ -32,9 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -47,10 +45,11 @@ import com.babydatalog.app.data.database.entity.SleepSession
 import com.babydatalog.app.data.database.entity.SleepType
 import com.babydatalog.app.ui.components.ConfirmDeleteDialog
 import com.babydatalog.app.ui.components.EmptyStateMessage
+import com.babydatalog.app.ui.components.formatElapsed
+import com.babydatalog.app.ui.components.rememberElapsedSeconds
 import com.babydatalog.app.utils.formatDuration
 import com.babydatalog.app.utils.toDisplayDateTime
 import com.babydatalog.app.viewmodel.SleepViewModel
-import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +61,7 @@ fun SleepListScreen(
 ) {
     val sessions by viewModel.sleepSessions.collectAsStateWithLifecycle()
     val openSession by viewModel.currentOpenSession.collectAsStateWithLifecycle()
+    val lastClosedSession by viewModel.lastClosedSession.collectAsStateWithLifecycle()
     var pendingDelete by remember { mutableStateOf<SleepSession?>(null) }
 
     if (pendingDelete != null) {
@@ -94,6 +94,7 @@ fun SleepListScreen(
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             SleepToggleCard(
                 openSession = openSession,
+                lastClosedSession = lastClosedSession,
                 onStart = viewModel::quickStart,
                 onEnd = viewModel::quickEnd
             )
@@ -144,38 +145,34 @@ fun SleepListScreen(
 @Composable
 private fun SleepToggleCard(
     openSession: SleepSession?,
+    lastClosedSession: SleepSession?,
     onStart: () -> Unit,
     onEnd: () -> Unit
 ) {
-    var elapsedSeconds by remember { mutableLongStateOf(0L) }
-
-    LaunchedEffect(openSession?.startTimeMs) {
-        val start = openSession?.startTimeMs
-        if (start != null) {
-            while (true) {
-                elapsedSeconds = (System.currentTimeMillis() - start) / 1000L
-                delay(1000L)
-            }
-        }
-    }
-
     ElevatedCard(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
         Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (openSession != null) {
-                val hours = elapsedSeconds / 3600
-                val mins = (elapsedSeconds % 3600) / 60
+                val elapsedSeconds = rememberElapsedSeconds(openSession.startTimeMs)
                 Icon(Icons.Filled.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text("Baby is asleep", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = if (hours > 0) "%dh %02dm".format(hours, mins) else "%dm".format(mins),
+                    text = formatElapsed(elapsedSeconds),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(onClick = onEnd) { Text("Woke Up") }
             } else {
+                val elapsedSeconds = rememberElapsedSeconds(lastClosedSession?.endTimeMs)
                 Text("Baby is awake", style = MaterialTheme.typography.titleMedium)
+                if (lastClosedSession != null) {
+                    Text(
+                        text = "Awake for ${formatElapsed(elapsedSeconds)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(onClick = onStart) { Text("Went to Sleep") }
             }

@@ -4,11 +4,12 @@ import com.babydatalog.app.data.database.entity.SleepSession
 import com.babydatalog.app.data.database.entity.SleepType
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 
 private const val DAY_MS = 86_400_000L
 
-enum class SleepStatsPeriod { TODAY, LAST_7_DAYS, LAST_30_DAYS, LAST_365_DAYS, ALL_TIME }
+enum class SleepStatsPeriod { TODAY, LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS, LAST_365_DAYS, ALL_TIME }
 
 /** One session's contribution to a single local calendar day, after splitting at local midnight. */
 data class DaySlice(val date: LocalDate, val startMs: Long, val endMs: Long, val type: SleepType)
@@ -65,6 +66,7 @@ fun periodStartMs(
     zone: ZoneId = ZoneId.systemDefault()
 ): Long = when (period) {
     SleepStatsPeriod.TODAY -> Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
+    SleepStatsPeriod.LAST_24_HOURS -> nowMs - DAY_MS
     SleepStatsPeriod.LAST_7_DAYS -> nowMs - 7 * DAY_MS
     SleepStatsPeriod.LAST_30_DAYS -> nowMs - 30 * DAY_MS
     SleepStatsPeriod.LAST_365_DAYS -> nowMs - 365 * DAY_MS
@@ -156,15 +158,39 @@ fun computeSleepStats(
 
 enum class SleepLens { NAP, NIGHT, COMBINED }
 
-/** hourlyPercent has 24 entries, index = local hour-of-day (0..23), value 0..100. */
-data class SleepHistogram(val hourlyPercent: List<Float>)
+/**
+ * hourlyMinutesAsleep has 24 entries, index = local hour-of-day (0..23), value 0..60 —
+ * minutes asleep in that hour, averaged across the days in the period (spec-extension:
+ * for TODAY/LAST_24_HOURS the "period" spans at most one day, so dividing by a day count
+ * clamped to at least 1.0 yields the literal minute count rather than an average).
+ */
+data class SleepHistogram(val hourlyMinutesAsleep: List<Float>)
+
+private fun clippedLensSlices(
+    closed: List<SleepSession>,
+    lens: SleepLens,
+    startMs: Long,
+    nowMs: Long,
+    zone: ZoneId
+): List<DaySlice> = closed.flatMap { splitAcrossDays(it, zone) }
+    .mapNotNull { slice ->
+        val clippedStart = maxOf(slice.startMs, startMs)
+        val clippedEnd = minOf(slice.endMs, nowMs)
+        if (clippedStart < clippedEnd) slice.copy(startMs = clippedStart, endMs = clippedEnd) else null
+    }
+    .filter {
+        when (lens) {
+            SleepLens.COMBINED -> true
+            SleepLens.NAP -> it.type == SleepType.NAP
+            SleepLens.NIGHT -> it.type == SleepType.NIGHT
+        }
+    }
 
 /**
- * For each local hour-of-day, the percentage of days in the period where the
- * baby was recorded asleep (for the given lens) at any point during that hour
- * — binary presence, not duration-weighted (spec §5.3). Day-split per §5.1
- * first, so an overnight session's hours land on the correct calendar day.
- * Sessions are clipped to the period boundaries to exclude time outside [startMs, nowMs].
+ * For each local hour-of-day, the average number of minutes (0..60) the baby was recorded
+ * asleep (for the given lens) during that hour, averaged over the days in the period.
+ * Day-split per §5.1 first, so an overnight session's minutes land on the correct calendar
+ * day. Sessions are clipped to the period boundaries to exclude time outside [startMs, nowMs].
  */
 fun computeSleepHistogram(
     sessions: List<SleepSession>,
@@ -175,37 +201,95 @@ fun computeSleepHistogram(
 ): SleepHistogram {
     val closed = sessions.filter { it.endTimeMs != null }
     val startMs = periodStartMs(period, closed, nowMs, zone)
+    val slices = clippedLensSlices(closed, lens, startMs, nowMs, zone)
 
-    val slices = closed.flatMap { splitAcrossDays(it, zone) }
-        .mapNotNull { slice ->
-            val clippedStart = maxOf(slice.startMs, startMs)
-            val clippedEnd = minOf(slice.endMs, nowMs)
-            if (clippedStart < clippedEnd) slice.copy(startMs = clippedStart, endMs = clippedEnd) else null
-        }
-        .filter {
-            when (lens) {
-                SleepLens.COMBINED -> true
-                SleepLens.NAP -> it.type == SleepType.NAP
-                SleepLens.NIGHT -> it.type == SleepType.NIGHT
-            }
-        }
-
-    // date -> set of local hours (0..23) the baby was asleep at any point that day
-    val hoursByDay = HashMap<LocalDate, MutableSet<Int>>()
+    val minutesByHour = DoubleArray(24)
     for (slice in slices) {
         var cursorMs = slice.startMs
         while (cursorMs < slice.endMs) {
             val zdt = Instant.ofEpochMilli(cursorMs).atZone(zone)
-            hoursByDay.getOrPut(slice.date) { mutableSetOf() }.add(zdt.hour)
             val nextHourMs = zdt.plusHours(1).withMinute(0).withSecond(0).withNano(0).toInstant().toEpochMilli()
-            cursorMs = minOf(slice.endMs, nextHourMs)
+            val segmentEndMs = minOf(slice.endMs, nextHourMs)
+            minutesByHour[zdt.hour] += (segmentEndMs - cursorMs) / 60_000.0
+            cursorMs = segmentEndMs
         }
     }
 
-    val totalDays = ((nowMs - startMs) / DAY_MS.toDouble()).coerceAtLeast(1.0)
-    val counts = IntArray(24)
-    for (hours in hoursByDay.values) {
-        for (h in hours) counts[h]++
+    val dayCount = ((nowMs - startMs) / DAY_MS.toDouble()).coerceAtLeast(1.0)
+    return SleepHistogram((0..23).map { h -> (minutesByHour[h] / dayCount).toFloat() })
+}
+
+/** One calendar day's total sleep minutes (for the given lens) within a stats period. */
+data class DailySleepTotal(val date: LocalDate, val totalMinutes: Float)
+
+/**
+ * Total sleep minutes per calendar day across the period, one entry per day from the
+ * period's start date to today (inclusive), even for days with no recorded sleep — so a
+ * day-by-day chart doesn't silently skip gaps.
+ */
+fun computeDailySleepTotals(
+    sessions: List<SleepSession>,
+    period: SleepStatsPeriod,
+    lens: SleepLens,
+    nowMs: Long = System.currentTimeMillis(),
+    zone: ZoneId = ZoneId.systemDefault()
+): List<DailySleepTotal> {
+    val closed = sessions.filter { it.endTimeMs != null }
+    val startMs = periodStartMs(period, closed, nowMs, zone)
+    val slices = clippedLensSlices(closed, lens, startMs, nowMs, zone)
+
+    val minutesByDate = sortedMapOf<LocalDate, Float>()
+    val startDate = Instant.ofEpochMilli(startMs).atZone(zone).toLocalDate()
+    val endDate = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
+    var d = startDate
+    while (!d.isAfter(endDate)) {
+        minutesByDate[d] = 0f
+        d = d.plusDays(1)
     }
-    return SleepHistogram((0..23).map { h -> (counts[h] / totalDays * 100.0).toFloat() })
+    for (slice in slices) {
+        minutesByDate[slice.date] = (minutesByDate[slice.date] ?: 0f) + (slice.endMs - slice.startMs) / 60_000f
+    }
+    return minutesByDate.map { (date, minutes) -> DailySleepTotal(date, minutes) }
+}
+
+/** One calendar month's average daily sleep minutes (for the given lens) within the last year. */
+data class MonthlySleepAverage(val yearMonth: YearMonth, val avgDailyMinutes: Float)
+
+/**
+ * Average daily sleep minutes per calendar month over the last 365 days, one entry per
+ * month touched by that window. A partial month (the first or the current one) is
+ * averaged only over the days actually inside the window, not the whole month.
+ */
+fun computeMonthlySleepAverages(
+    sessions: List<SleepSession>,
+    lens: SleepLens,
+    nowMs: Long = System.currentTimeMillis(),
+    zone: ZoneId = ZoneId.systemDefault()
+): List<MonthlySleepAverage> {
+    val closed = sessions.filter { it.endTimeMs != null }
+    val startMs = periodStartMs(SleepStatsPeriod.LAST_365_DAYS, closed, nowMs, zone)
+    val slices = clippedLensSlices(closed, lens, startMs, nowMs, zone)
+
+    val minutesByDate = HashMap<LocalDate, Float>()
+    for (slice in slices) {
+        minutesByDate[slice.date] = (minutesByDate[slice.date] ?: 0f) + (slice.endMs - slice.startMs) / 60_000f
+    }
+
+    val dayCountByMonth = LinkedHashMap<YearMonth, Int>()
+    val startDate = Instant.ofEpochMilli(startMs).atZone(zone).toLocalDate()
+    val endDate = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
+    var d = startDate
+    while (!d.isAfter(endDate)) {
+        val ym = YearMonth.from(d)
+        dayCountByMonth[ym] = (dayCountByMonth[ym] ?: 0) + 1
+        d = d.plusDays(1)
+    }
+
+    val minutesByMonth = HashMap<YearMonth, Float>()
+    for ((date, minutes) in minutesByDate) {
+        val ym = YearMonth.from(date)
+        if (ym in dayCountByMonth) minutesByMonth[ym] = (minutesByMonth[ym] ?: 0f) + minutes
+    }
+
+    return dayCountByMonth.map { (ym, dayCount) -> MonthlySleepAverage(ym, (minutesByMonth[ym] ?: 0f) / dayCount) }
 }
