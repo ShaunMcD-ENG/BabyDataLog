@@ -293,3 +293,27 @@ fun computeMonthlySleepAverages(
 
     return dayCountByMonth.map { (ym, dayCount) -> MonthlySleepAverage(ym, (minutesByMonth[ym] ?: 0f) / dayCount) }
 }
+
+/** Total minutes asleep vs. awake over a trailing window (used for the live status card). */
+data class SleepAwakeSummary(val sleepMinutes: Float, val awakeMinutes: Float)
+
+/**
+ * Sleep/awake split over the trailing 24 hours. Unlike [computeSleepStats], an open
+ * (in-progress) session is NOT excluded — it's treated as ending "now", so the live
+ * status card's totals reflect the baby's current state instead of only sessions that
+ * have already closed. Awake is simply the remainder of the 24-hour window.
+ */
+fun computeLast24HourSleepAwake(
+    sessions: List<SleepSession>,
+    nowMs: Long = System.currentTimeMillis()
+): SleepAwakeSummary {
+    val windowStart = nowMs - DAY_MS
+    val windowMinutes = DAY_MS / 60_000f
+    val sleepMinutes = sessions.sumOf { session ->
+        val end = session.endTimeMs ?: nowMs
+        val clippedStart = maxOf(session.startTimeMs, windowStart)
+        val clippedEnd = minOf(end, nowMs)
+        if (clippedStart < clippedEnd) (clippedEnd - clippedStart) / 60_000.0 else 0.0
+    }.toFloat().coerceIn(0f, windowMinutes)
+    return SleepAwakeSummary(sleepMinutes, windowMinutes - sleepMinutes)
+}

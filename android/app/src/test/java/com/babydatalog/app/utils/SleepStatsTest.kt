@@ -466,4 +466,61 @@ class SleepStatsTest {
         val averages = computeMonthlySleepAverages(listOf(tooOld), SleepLens.NAP, now, UTC)
         assertTrue(averages.all { it.avgDailyMinutes == 0f })
     }
+
+    // ─── computeLast24HourSleepAwake ─────────────────────────────────────────
+
+    @Test
+    fun computeLast24HourSleepAwake_closedSession_splitsIntoSleepAndAwake() {
+        val now = 1_700_000_000_000L
+        // 2 hours of sleep somewhere in the last 24h
+        val sessions = listOf(session(startMs = now - 5 * 3_600_000L, endMs = now - 3 * 3_600_000L))
+
+        val summary = computeLast24HourSleepAwake(sessions, now)
+
+        assertEquals(120f, summary.sleepMinutes, 0.01f)
+        assertEquals(24 * 60f - 120f, summary.awakeMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeLast24HourSleepAwake_openSession_countsElapsedTimeAsAsleep() {
+        val now = 1_700_000_000_000L
+        // still asleep, started 1 hour ago
+        val sessions = listOf(session(startMs = now - 3_600_000L, endMs = null))
+
+        val summary = computeLast24HourSleepAwake(sessions, now)
+
+        assertEquals(60f, summary.sleepMinutes, 0.01f)
+        assertEquals(24 * 60f - 60f, summary.awakeMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeLast24HourSleepAwake_sessionStartsBeforeWindow_clipsToWindow() {
+        val now = 1_700_000_000_000L
+        // started 30 hours ago (before the window), ended 20 hours ago
+        val sessions = listOf(session(startMs = now - 30 * 3_600_000L, endMs = now - 20 * 3_600_000L))
+
+        val summary = computeLast24HourSleepAwake(sessions, now)
+
+        // only the last 4 hours of that session (24h ago -> 20h ago) fall in the window
+        assertEquals(4 * 60f, summary.sleepMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeLast24HourSleepAwake_noSessions_allAwake() {
+        val now = 1_700_000_000_000L
+        val summary = computeLast24HourSleepAwake(emptyList(), now)
+        assertEquals(0f, summary.sleepMinutes, 0.01f)
+        assertEquals(24 * 60f, summary.awakeMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeLast24HourSleepAwake_alwaysSumsToTwentyFourHours() {
+        val now = 1_700_000_000_000L
+        val sessions = listOf(
+            session(id = 1, startMs = now - 10 * 3_600_000L, endMs = now - 8 * 3_600_000L),
+            session(id = 2, startMs = now - 4 * 3_600_000L, endMs = now - 2 * 3_600_000L)
+        )
+        val summary = computeLast24HourSleepAwake(sessions, now)
+        assertEquals(24 * 60f, summary.sleepMinutes + summary.awakeMinutes, 0.01f)
+    }
 }

@@ -8,6 +8,8 @@ import com.babydatalog.app.data.database.entity.SleepSession
 import com.babydatalog.app.data.repository.FeedingRepository
 import com.babydatalog.app.data.repository.NappyRepository
 import com.babydatalog.app.data.repository.SleepRepository
+import com.babydatalog.app.utils.SleepAwakeSummary
+import com.babydatalog.app.utils.computeLast24HourSleepAwake
 import com.babydatalog.app.utils.defaultSleepTypeForStart
 import com.babydatalog.app.utils.todayEndMs
 import com.babydatalog.app.utils.todayStartMs
@@ -80,6 +82,13 @@ class HomeViewModel @Inject constructor(
             if (id != null) sleepRepository.getLastClosedSleepSession(id) else flowOf(null)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val last24HourSummary: StateFlow<SleepAwakeSummary> = _activeBabyId
+        .flatMapLatest { id ->
+            if (id != null) sleepRepository.getSleepSessionsForBaby(id).map { computeLast24HourSleepAwake(it) }
+            else flowOf(computeLast24HourSleepAwake(emptyList()))
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), computeLast24HourSleepAwake(emptyList()))
 
     fun quickStartSleep() {
         val babyId = _activeBabyId.value ?: return

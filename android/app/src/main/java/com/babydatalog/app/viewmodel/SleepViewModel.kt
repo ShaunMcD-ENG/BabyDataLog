@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.babydatalog.app.data.database.entity.SleepSession
 import com.babydatalog.app.data.database.entity.SleepType
 import com.babydatalog.app.data.repository.SleepRepository
+import com.babydatalog.app.utils.SleepAwakeSummary
+import com.babydatalog.app.utils.computeLast24HourSleepAwake
 import com.babydatalog.app.utils.defaultSleepTypeForStart
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -60,6 +63,10 @@ class SleepViewModel @Inject constructor(
             if (id != null) sleepRepository.getLastClosedSleepSession(id) else flowOf(null)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val last24HourSummary: StateFlow<SleepAwakeSummary> = sleepSessions
+        .map { computeLast24HourSleepAwake(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), computeLast24HourSleepAwake(emptyList()))
 
     fun setActiveBabyId(id: Long) {
         if (_activeBabyId.value != id) {

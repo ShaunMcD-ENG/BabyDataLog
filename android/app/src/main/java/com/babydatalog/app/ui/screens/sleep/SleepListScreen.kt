@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -47,6 +48,7 @@ import com.babydatalog.app.ui.components.ConfirmDeleteDialog
 import com.babydatalog.app.ui.components.EmptyStateMessage
 import com.babydatalog.app.ui.components.formatElapsed
 import com.babydatalog.app.ui.components.rememberElapsedSeconds
+import com.babydatalog.app.utils.SleepAwakeSummary
 import com.babydatalog.app.utils.formatDuration
 import com.babydatalog.app.utils.toDisplayDateTime
 import com.babydatalog.app.viewmodel.SleepViewModel
@@ -62,6 +64,7 @@ fun SleepListScreen(
     val sessions by viewModel.sleepSessions.collectAsStateWithLifecycle()
     val openSession by viewModel.currentOpenSession.collectAsStateWithLifecycle()
     val lastClosedSession by viewModel.lastClosedSession.collectAsStateWithLifecycle()
+    val last24HourSummary by viewModel.last24HourSummary.collectAsStateWithLifecycle()
     var pendingDelete by remember { mutableStateOf<SleepSession?>(null) }
 
     if (pendingDelete != null) {
@@ -95,6 +98,7 @@ fun SleepListScreen(
             SleepToggleCard(
                 openSession = openSession,
                 lastClosedSession = lastClosedSession,
+                last24HourSummary = last24HourSummary,
                 onStart = viewModel::quickStart,
                 onEnd = viewModel::quickEnd
             )
@@ -146,35 +150,58 @@ fun SleepListScreen(
 private fun SleepToggleCard(
     openSession: SleepSession?,
     lastClosedSession: SleepSession?,
+    last24HourSummary: SleepAwakeSummary,
     onStart: () -> Unit,
     onEnd: () -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
             if (openSession != null) {
                 val elapsedSeconds = rememberElapsedSeconds(openSession.startTimeMs)
-                Icon(Icons.Filled.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("Baby is asleep", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = formatElapsed(elapsedSeconds),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(onClick = onEnd) { Text("Woke Up") }
-            } else {
-                val elapsedSeconds = rememberElapsedSeconds(lastClosedSession?.endTimeMs)
-                Text("Baby is awake", style = MaterialTheme.typography.titleMedium)
-                if (lastClosedSession != null) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Baby is asleep", style = MaterialTheme.typography.titleMedium)
+                    }
                     Text(
-                        text = "Awake for ${formatElapsed(elapsedSeconds)}",
+                        text = formatElapsed(elapsedSeconds),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = onEnd) { Text("Woke Up") }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(onClick = onStart) { Text("Went to Sleep") }
+            } else {
+                val elapsedSeconds = rememberElapsedSeconds(lastClosedSession?.endTimeMs)
+                Column {
+                    Text("Baby is awake", style = MaterialTheme.typography.titleMedium)
+                    if (lastClosedSession != null) {
+                        Text(
+                            text = "Awake for ${formatElapsed(elapsedSeconds)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = onStart) { Text("Went to Sleep") }
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "Asleep (24h): ${formatDuration(last24HourSummary.sleepMinutes)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "Awake (24h): ${formatDuration(last24HourSummary.awakeMinutes)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

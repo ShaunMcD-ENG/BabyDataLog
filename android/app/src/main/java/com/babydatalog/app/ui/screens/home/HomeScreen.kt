@@ -81,6 +81,7 @@ fun HomeScreen(
     val latestMeasurement by growthViewModel.latestMeasurement.collectAsStateWithLifecycle()
     val currentSleepSession by viewModel.currentSleepSession.collectAsStateWithLifecycle()
     val lastClosedSleepSession by viewModel.lastClosedSleepSession.collectAsStateWithLifecycle()
+    val last24HourSummary by viewModel.last24HourSummary.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -191,7 +192,7 @@ fun HomeScreen(
                     Row(
                         modifier = Modifier.padding(16.dp).fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.Top
                     ) {
                         if (currentSleepSession != null) {
                             val elapsedSeconds = rememberElapsedSeconds(currentSleepSession?.startTimeMs)
@@ -206,8 +207,9 @@ fun HomeScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(onClick = { viewModel.quickEndSleep() }) { Text("Wake Up") }
                             }
-                            Button(onClick = { viewModel.quickEndSleep() }) { Text("Wake Up") }
                         } else {
                             val elapsedSeconds = rememberElapsedSeconds(lastClosedSleepSession?.endTimeMs)
                             Column {
@@ -219,8 +221,21 @@ fun HomeScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(onClick = { viewModel.quickStartSleep() }) { Text("Went to Sleep") }
                             }
-                            Button(onClick = { viewModel.quickStartSleep() }) { Text("Went to Sleep") }
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "Asleep (24h): ${formatDuration(last24HourSummary.sleepMinutes)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Awake (24h): ${formatDuration(last24HourSummary.awakeMinutes)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
