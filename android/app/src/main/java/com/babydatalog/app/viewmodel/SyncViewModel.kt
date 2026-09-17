@@ -161,6 +161,17 @@ class SyncViewModel @Inject constructor(
         setConnected()
     }
 
+    /** Renames this device. Re-syncs are unaffected — only the display name changes. */
+    fun renameDevice(newName: String) {
+        val current = _uiState.value as? SyncUiState.Connected ?: return
+        viewModelScope.launch {
+            when (val result = repo.renameDevice(newName)) {
+                is SyncResult.Success -> setConnected()
+                is SyncResult.Error -> _uiState.value = current.copy(syncError = result.message)
+            }
+        }
+    }
+
     fun disconnect() {
         cancelAutoSync()
         repo.disconnect()

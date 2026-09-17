@@ -111,9 +111,12 @@ export default async function DashboardPage() {
   const approved = devices.filter((d) => d.status === "approved");
   const rejected = devices.filter((d) => d.status === "rejected");
 
+  // Prefer the name snapshotted at write time (sl.deviceName) so a later
+  // rename doesn't relabel history; rows from before that column existed
+  // fall back to the device's current name via the join.
   const recentLog = db
     .prepare(
-      `SELECT sl.*, d.name AS deviceName
+      `SELECT sl.*, COALESCE(sl.deviceName, d.name) AS deviceName
        FROM sync_log sl
        LEFT JOIN devices d ON d.deviceId = sl.deviceId
        ORDER BY sl.syncedAtMs DESC LIMIT 30`

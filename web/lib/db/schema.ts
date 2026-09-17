@@ -177,6 +177,15 @@ export function runMigrations() {
     }
   }
 
+  // Snapshot the device's name onto each sync_log row at write time, so a
+  // later device rename doesn't retroactively relabel historical activity —
+  // rows written before this column existed fall back to a live join against
+  // devices.name (see app/page.tsx's recentLog query).
+  const syncLogCols = db.prepare(`PRAGMA table_info(sync_log)`).all() as { name: string }[];
+  if (!syncLogCols.some((c) => c.name === "deviceName")) {
+    db.prepare(`ALTER TABLE sync_log ADD COLUMN deviceName TEXT`).run();
+  }
+
   // One-time migration: split nappy_changes' single `type` (PEE/POO/BOTH) +
   // `amount` pair into independent weeAmount/pooAmount columns. Rebuilds the
   // table (SQLite can't drop the old NOT NULL columns in place) so a PEE-only

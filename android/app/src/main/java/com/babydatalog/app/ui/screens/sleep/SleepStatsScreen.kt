@@ -48,12 +48,17 @@ import com.patrykandpatrick.vico.compose.chart.line.lineChart
 import com.patrykandpatrick.vico.compose.m3.style.m3ChartStyle
 import com.patrykandpatrick.vico.compose.style.ProvideChartStyle
 import com.patrykandpatrick.vico.core.axis.AxisItemPlacer
+import com.patrykandpatrick.vico.core.axis.AxisPosition
+import com.patrykandpatrick.vico.core.axis.vertical.VerticalAxis
+import com.patrykandpatrick.vico.core.chart.draw.ChartDrawContext
 import com.patrykandpatrick.vico.core.chart.values.AxisValuesOverrider
+import com.patrykandpatrick.vico.core.context.MeasureContext
 import com.patrykandpatrick.vico.core.entry.ChartEntryModelProducer
 import com.patrykandpatrick.vico.core.entry.entryOf
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
+import kotlin.math.ceil
 
 private fun periodLabel(period: SleepStatsPeriod): String = when (period) {
     SleepStatsPeriod.TODAY -> "Today"
@@ -68,6 +73,69 @@ private fun periodLabel(period: SleepStatsPeriod): String = when (period) {
 // count rather than an average across multiple days.
 private fun isSingleDayPeriod(period: SleepStatsPeriod): Boolean =
     period == SleepStatsPeriod.TODAY || period == SleepStatsPeriod.LAST_24_HOURS
+
+// 0 -> "12am", 13 -> "1pm", 23 -> "11pm", etc.
+private fun hourLabel(hour: Int): String = when {
+    hour == 0 -> "12am"
+    hour < 12 -> "${hour}am"
+    hour == 12 -> "12pm"
+    else -> "${hour - 12}pm"
+}
+
+/**
+ * Vico's default vertical-axis item placer divides [minY, maxY] into
+ * evenly-spaced steps with no regard for whether the result is a whole
+ * number (e.g. 13.3h gridlines for a 4-label axis over a 40h range). This
+ * picks a whole-number step instead, so "hours" axes always show integers.
+ */
+private class WholeNumberVerticalAxisItemPlacer(private val maxLabelCount: Int = 5) : AxisItemPlacer.Vertical {
+
+    private fun labelValues(context: MeasureContext, position: AxisPosition.Vertical): List<Float> {
+        val maxY = context.chartValuesProvider.getChartValues(position).maxY
+        if (maxY <= 0f) return listOf(0f)
+        val roundedMax = ceil(maxY).toInt().coerceAtLeast(1)
+        val step = ceil(roundedMax / (maxLabelCount - 1).toFloat()).toInt().coerceAtLeast(1)
+        val values = mutableListOf(0f)
+        var v = step
+        while (v < roundedMax) {
+            values += v.toFloat()
+            v += step
+        }
+        values += roundedMax.toFloat()
+        return values
+    }
+
+    override fun getLabelValues(
+        context: ChartDrawContext,
+        axisHeight: Float,
+        maxLabelHeight: Float,
+        position: AxisPosition.Vertical
+    ): List<Float> = labelValues(context, position)
+
+    override fun getHeightMeasurementLabelValues(
+        context: MeasureContext,
+        position: AxisPosition.Vertical
+    ): List<Float> = labelValues(context, position)
+
+    override fun getWidthMeasurementLabelValues(
+        context: MeasureContext,
+        axisHeight: Float,
+        maxLabelHeight: Float,
+        position: AxisPosition.Vertical
+    ): List<Float> = labelValues(context, position)
+
+    override fun getTopVerticalAxisInset(
+        verticalLabelPosition: VerticalAxis.VerticalLabelPosition,
+        maxLabelHeight: Float,
+        maxLineThickness: Float
+    ): Float = maxLabelHeight / 2f
+
+    override fun getBottomVerticalAxisInset(
+        verticalLabelPosition: VerticalAxis.VerticalLabelPosition,
+        maxLabelHeight: Float,
+        maxLineThickness: Float
+    ): Float = maxLabelHeight / 2f
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -237,7 +305,7 @@ private fun SleepHistogramChart(histogram: SleepHistogram) {
                     valueFormatter = { value, _ -> "${value.toInt()}m" }
                 ),
                 bottomAxis = rememberBottomAxis(
-                    valueFormatter = { value, _ -> if (value.toInt() % 2 == 0) "${value.toInt()}h" else "" }
+                    valueFormatter = { value, _ -> if (value.toInt() % 2 == 0) hourLabel(value.toInt()) else "" }
                 ),
                 modifier = Modifier.fillMaxWidth().height(200.dp)
             )
@@ -254,14 +322,15 @@ private fun DailySleepChart(totals: List<DailySleepTotal>) {
             totals.mapIndexed { index, total -> entryOf(index.toFloat(), total.totalMinutes / 60f) }
         }
         val producer = remember(totals) { ChartEntryModelProducer(entries) }
+        val axisMax = remember(entries) { ceil((entries.maxOfOrNull { it.y } ?: 0f).coerceAtLeast(1f)) }
 
         ProvideChartStyle(m3ChartStyle()) {
             Chart(
-                chart = columnChart(),
+                chart = columnChart(axisValuesOverrider = AxisValuesOverrider.fixed(minY = 0f, maxY = axisMax)),
                 chartModelProducer = producer,
                 startAxis = rememberStartAxis(
-                    itemPlacer = AxisItemPlacer.Vertical.default(maxItemCount = 5),
-                    valueFormatter = { value, _ -> "%.1fh".format(value) }
+                    itemPlacer = remember { WholeNumberVerticalAxisItemPlacer() },
+                    valueFormatter = { value, _ -> "${value.toInt()}h" }
                 ),
                 bottomAxis = rememberBottomAxis(
                     valueFormatter = { value, _ -> labels.getOrNull(value.toInt()) ?: "" }
@@ -282,14 +351,15 @@ private fun MonthlySleepChart(averages: List<MonthlySleepAverage>) {
             averages.mapIndexed { index, avg -> entryOf(index.toFloat(), avg.avgDailyMinutes / 60f) }
         }
         val producer = remember(averages) { ChartEntryModelProducer(entries) }
+        val axisMax = remember(entries) { ceil((entries.maxOfOrNull { it.y } ?: 0f).coerceAtLeast(1f)) }
 
         ProvideChartStyle(m3ChartStyle()) {
             Chart(
-                chart = columnChart(),
+                chart = columnChart(axisValuesOverrider = AxisValuesOverrider.fixed(minY = 0f, maxY = axisMax)),
                 chartModelProducer = producer,
                 startAxis = rememberStartAxis(
-                    itemPlacer = AxisItemPlacer.Vertical.default(maxItemCount = 5),
-                    valueFormatter = { value, _ -> "%.1fh".format(value) }
+                    itemPlacer = remember { WholeNumberVerticalAxisItemPlacer() },
+                    valueFormatter = { value, _ -> "${value.toInt()}h" }
                 ),
                 bottomAxis = rememberBottomAxis(
                     valueFormatter = { value, _ -> labels.getOrNull(value.toInt()) ?: "" }

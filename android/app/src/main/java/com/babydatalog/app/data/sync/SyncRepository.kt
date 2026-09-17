@@ -137,6 +137,24 @@ class SyncRepository @Inject constructor(
 
     fun disconnect() = prefs.clear()
 
+    // Renames this device. Server-side, this is a plain `devices.name` update —
+    // that column isn't unique and isn't used to attribute sync data (that's
+    // always keyed by the immutable deviceId), so a name collision with
+    // another device is never a problem, and no merge is needed. Historical
+    // sync activity keeps showing the old name (snapshotted server-side at
+    // push time); only future activity shows the new one.
+    suspend fun renameDevice(newName: String): SyncResult {
+        val serverUrl = prefs.serverUrl ?: return SyncResult.Error("Not connected to a server")
+        val apiKey = prefs.apiKey ?: return SyncResult.Error("Device not yet approved")
+        val result = api.renameDevice(serverUrl, apiKey, newName)
+        return if (result.error != null) {
+            SyncResult.Error(result.error)
+        } else {
+            prefs.deviceName = result.data?.name ?: newName
+            SyncResult.Success
+        }
+    }
+
     private data class PushOutcome(val error: String?, val heldBack: List<DeferredRecord> = emptyList())
 
     private suspend fun pushAll(serverUrl: String, apiKey: String, deviceId: String): PushOutcome {

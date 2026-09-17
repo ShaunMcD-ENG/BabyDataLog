@@ -49,6 +49,14 @@ class SyncApiClient @Inject constructor() {
         apiKey = apiKey
     ).parse { json.decodeFromString<SyncPullResponse>(it) }
 
+    suspend fun renameDevice(
+        serverUrl: String, apiKey: String, name: String
+    ): ApiResult<RenameDeviceResponse> = post(
+        url = "$serverUrl/api/sync/devices/rename",
+        body = json.encodeToString(RenameDeviceRequest(name)),
+        apiKey = apiKey
+    ).parse { json.decodeFromString<RenameDeviceResponse>(it) }
+
     // --- HTTP primitives ---
 
     private data class RawResult(val code: Int, val body: String)

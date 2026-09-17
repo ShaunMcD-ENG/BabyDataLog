@@ -80,6 +80,7 @@ fun SyncScreen(viewModel: SyncViewModel = hiltViewModel()) {
                 onSync = viewModel::syncNow,
                 onWipeAndResync = viewModel::wipeAndResync,
                 onDisconnect = viewModel::disconnect,
+                onRenameDevice = viewModel::renameDevice,
                 onAssignDeferred = viewModel::assignDeferredToBaby,
                 onDismissDeferred = viewModel::dismissDeferred
             )
@@ -199,10 +200,12 @@ private fun ConnectedContent(
     onSync: () -> Unit,
     onWipeAndResync: () -> Unit,
     onDisconnect: () -> Unit,
+    onRenameDevice: (String) -> Unit,
     onAssignDeferred: (DeferredRecord, Long) -> Unit,
     onDismissDeferred: (DeferredRecord) -> Unit
 ) {
     var showWipeConfirm by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
     var secondsUntilSync by remember { mutableLongStateOf(0L) }
 
     LaunchedEffect(state.lastSyncMs) {
@@ -227,6 +230,41 @@ private fun ConnectedContent(
             },
             dismissButton = {
                 TextButton(onClick = { showWipeConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showRenameDialog) {
+        var newName by remember { mutableStateOf(state.deviceName) }
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text("Rename Device") },
+            text = {
+                Column {
+                    Text(
+                        text = "This only changes the display name. It's safe even if another device already uses this name.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Device Name") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showRenameDialog = false; onRenameDevice(newName.trim()) },
+                    enabled = newName.isNotBlank() && newName.trim() != state.deviceName
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") }
             }
         )
     }
@@ -309,6 +347,13 @@ private fun ConnectedContent(
         Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
         Text("Sync Now")
+    }
+
+    OutlinedButton(
+        onClick = { showRenameDialog = true },
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+    ) {
+        Text("Rename Device")
     }
 
     OutlinedButton(

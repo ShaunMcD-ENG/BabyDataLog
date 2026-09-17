@@ -141,8 +141,14 @@ export async function POST(req: NextRequest) {
   const results = { inserted: 0, updated: 0, skipped: 0 };
   const errors: string[] = [];
 
+  // Snapshotted once per push so a later rename doesn't relabel this batch's
+  // log entries (see the deviceName migration note in lib/db/schema.ts).
+  const deviceName = (
+    db.prepare(`SELECT name FROM devices WHERE deviceId = ?`).get(deviceId) as { name: string } | undefined
+  )?.name ?? null;
+
   const logSync = db.prepare(
-    `INSERT INTO sync_log (deviceId, table_name, syncUuid, action, syncedAtMs) VALUES (?,?,?,?,?)`
+    `INSERT INTO sync_log (deviceId, table_name, syncUuid, action, syncedAtMs, deviceName) VALUES (?,?,?,?,?,?)`
   );
 
   db.transaction(() => {
@@ -178,14 +184,14 @@ export async function POST(req: NextRequest) {
 
         if (!existing) {
           if (insertRow(table, record)) {
-            logSync.run(deviceId, table, record.syncUuid, "push", now);
+            logSync.run(deviceId, table, record.syncUuid, "push", now, deviceName);
             results.inserted++;
           } else {
             results.skipped++;
           }
         } else if (recordTimestamp(record) > recordTimestamp(existing)) {
           updateRow(table, existing, record);
-          logSync.run(deviceId, table, existing.syncUuid, "updated", now);
+          logSync.run(deviceId, table, existing.syncUuid, "updated", now, deviceName);
           results.updated++;
         } else {
           results.skipped++;

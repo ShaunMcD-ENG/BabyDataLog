@@ -32,6 +32,12 @@ data class PollResponse(val status: String, val apiKey: String? = null)
 data class SyncPushRequest(val deviceId: String, val table: String, val records: JsonArray)
 
 @Serializable
+data class RenameDeviceRequest(val name: String)
+
+@Serializable
+data class RenameDeviceResponse(val ok: Boolean, val name: String)
+
+@Serializable
 data class SyncPullResponse(
     val syncedAtMs: Long,
     val data: JsonObject,
