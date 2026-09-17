@@ -8,10 +8,29 @@ import java.time.ZoneId
 
 private const val DAY_MS = 86_400_000L
 
-enum class SleepStatsPeriod { LAST_7_DAYS, LAST_30_DAYS, LAST_365_DAYS, ALL_TIME }
+enum class SleepStatsPeriod { TODAY, LAST_7_DAYS, LAST_30_DAYS, LAST_365_DAYS, ALL_TIME }
 
 /** One session's contribution to a single local calendar day, after splitting at local midnight. */
 data class DaySlice(val date: LocalDate, val startMs: Long, val endMs: Long, val type: SleepType)
+
+/**
+ * Splits a raw [start, end) range into per-local-day portions at midnight. Shared core
+ * behind [splitAcrossDays] and the wake-window gap computation in [computeSleepStats],
+ * neither of which needs a [SleepType] attached to the pieces.
+ */
+private fun splitRangeAcrossDays(start: Long, end: Long, zone: ZoneId): List<Triple<LocalDate, Long, Long>> {
+    if (end <= start) return emptyList()
+    val slices = mutableListOf<Triple<LocalDate, Long, Long>>()
+    var cursorMs = start
+    while (cursorMs < end) {
+        val cursorDate = Instant.ofEpochMilli(cursorMs).atZone(zone).toLocalDate()
+        val nextMidnightMs = cursorDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val sliceEndMs = minOf(end, nextMidnightMs)
+        slices += Triple(cursorDate, cursorMs, sliceEndMs)
+        cursorMs = sliceEndMs
+    }
+    return slices
+}
 
 // A session starting in the evening/overnight window defaults to NIGHT; anything
 // else defaults to NAP. This is only ever a pre-selected default — the type field
@@ -30,19 +49,8 @@ fun defaultSleepTypeForStart(startTimeMs: Long, zone: ZoneId = ZoneId.systemDefa
  */
 fun splitAcrossDays(session: SleepSession, zone: ZoneId = ZoneId.systemDefault()): List<DaySlice> {
     val end = session.endTimeMs ?: return emptyList()
-    val start = session.startTimeMs
-    if (end <= start) return emptyList()
-
-    val slices = mutableListOf<DaySlice>()
-    var cursorMs = start
-    while (cursorMs < end) {
-        val cursorDate = Instant.ofEpochMilli(cursorMs).atZone(zone).toLocalDate()
-        val nextMidnightMs = cursorDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val sliceEndMs = minOf(end, nextMidnightMs)
-        slices += DaySlice(cursorDate, cursorMs, sliceEndMs, session.type)
-        cursorMs = sliceEndMs
-    }
-    return slices
+    return splitRangeAcrossDays(session.startTimeMs, end, zone)
+        .map { (date, sliceStart, sliceEnd) -> DaySlice(date, sliceStart, sliceEnd, session.type) }
 }
 
 /**
@@ -56,6 +64,7 @@ fun periodStartMs(
     nowMs: Long,
     zone: ZoneId = ZoneId.systemDefault()
 ): Long = when (period) {
+    SleepStatsPeriod.TODAY -> Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
     SleepStatsPeriod.LAST_7_DAYS -> nowMs - 7 * DAY_MS
     SleepStatsPeriod.LAST_30_DAYS -> nowMs - 30 * DAY_MS
     SleepStatsPeriod.LAST_365_DAYS -> nowMs - 365 * DAY_MS
@@ -70,10 +79,15 @@ data class SleepLensStats(
     val avgSessionDurationMinutes: Float?
 )
 
-data class SleepStats(val nap: SleepLensStats, val night: SleepLensStats, val combined: SleepLensStats)
+data class SleepStats(
+    val nap: SleepLensStats,
+    val night: SleepLensStats,
+    val wakeWindow: SleepLensStats,
+    val combined: SleepLensStats
+)
 
-private fun lensStats(slices: List<DaySlice>, dayCount: Float, includeCount: Boolean): SleepLensStats {
-    val totalMinutes = slices.sumOf { (it.endMs - it.startMs) / 60_000.0 }.toFloat()
+private fun lensStats(durations: List<Pair<Long, Long>>, dayCount: Float, includeCount: Boolean): SleepLensStats {
+    val totalMinutes = durations.sumOf { (it.second - it.first) / 60_000.0 }.toFloat()
     if (!includeCount) {
         return SleepLensStats(
             sessionCount = null,
@@ -83,7 +97,7 @@ private fun lensStats(slices: List<DaySlice>, dayCount: Float, includeCount: Boo
             avgSessionDurationMinutes = null
         )
     }
-    val count = slices.size
+    val count = durations.size
     return SleepLensStats(
         sessionCount = count,
         totalMinutes = totalMinutes,
@@ -94,10 +108,13 @@ private fun lensStats(slices: List<DaySlice>, dayCount: Float, includeCount: Boo
 }
 
 /**
- * Per-lens (Nap / Night / Combined) totals for the selected period. Open
- * sessions are excluded entirely (spec §5.2 / Q19); overnight sessions are
- * split at local midnight first (spec §5.1) so a session that only partly
- * overlaps the period contributes only its overlapping portion.
+ * Per-lens (Nap / Night / Wake Window / Combined) totals for the selected period. Open
+ * sessions are excluded entirely (spec §5.2 / Q19); overnight sessions are split at
+ * local midnight first (spec §5.1) so a session that only partly overlaps the period
+ * contributes only its overlapping portion. Wake Window is the gap between one closed
+ * session's end and the next closed session's start (sessions sorted by start time) —
+ * the stretch after the most-recent session's end has no "next" session yet, so it's an
+ * open wake window and is excluded, mirroring how an open sleep session is excluded.
  */
 fun computeSleepStats(
     sessions: List<SleepSession>,
@@ -109,20 +126,31 @@ fun computeSleepStats(
     val startMs = periodStartMs(period, closed, nowMs, zone)
     val dayCount = ((nowMs - startMs) / DAY_MS.toDouble()).coerceAtLeast(1.0).toFloat()
 
-    val allSlices = closed.flatMap { splitAcrossDays(it, zone) }
-        .mapNotNull { slice ->
-            val clippedStart = maxOf(slice.startMs, startMs)
-            val clippedEnd = minOf(slice.endMs, nowMs)
-            if (clippedStart < clippedEnd) slice.copy(startMs = clippedStart, endMs = clippedEnd) else null
+    fun clippedDurations(rawSlices: List<Triple<LocalDate, Long, Long>>): List<Pair<Long, Long>> =
+        rawSlices.mapNotNull { (_, sliceStart, sliceEnd) ->
+            val clippedStart = maxOf(sliceStart, startMs)
+            val clippedEnd = minOf(sliceEnd, nowMs)
+            if (clippedStart < clippedEnd) clippedStart to clippedEnd else null
         }
 
-    val napSlices = allSlices.filter { it.type == SleepType.NAP }
-    val nightSlices = allSlices.filter { it.type == SleepType.NIGHT }
+    fun durationsFor(type: SleepType) = clippedDurations(
+        closed.filter { it.type == type }.flatMap { splitRangeAcrossDays(it.startTimeMs, it.endTimeMs!!, zone) }
+    )
+
+    val napDurations = durationsFor(SleepType.NAP)
+    val nightDurations = durationsFor(SleepType.NIGHT)
+    val allDurations = clippedDurations(closed.flatMap { splitRangeAcrossDays(it.startTimeMs, it.endTimeMs!!, zone) })
+    val wakeWindowDurations = clippedDurations(
+        closed.sortedBy { it.startTimeMs }
+            .zipWithNext()
+            .flatMap { (prev, next) -> splitRangeAcrossDays(prev.endTimeMs!!, next.startTimeMs, zone) }
+    )
 
     return SleepStats(
-        nap = lensStats(napSlices, dayCount, includeCount = true),
-        night = lensStats(nightSlices, dayCount, includeCount = true),
-        combined = lensStats(allSlices, dayCount, includeCount = false)
+        nap = lensStats(napDurations, dayCount, includeCount = true),
+        night = lensStats(nightDurations, dayCount, includeCount = true),
+        wakeWindow = lensStats(wakeWindowDurations, dayCount, includeCount = true),
+        combined = lensStats(allDurations, dayCount, includeCount = false)
     )
 }
 

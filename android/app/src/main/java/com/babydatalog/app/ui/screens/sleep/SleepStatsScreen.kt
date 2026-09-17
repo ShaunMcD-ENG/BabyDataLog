@@ -8,13 +8,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -44,6 +49,7 @@ import com.patrykandpatrick.vico.core.entry.ChartEntryModelProducer
 import com.patrykandpatrick.vico.core.entry.entryOf
 
 private fun periodLabel(period: SleepStatsPeriod): String = when (period) {
+    SleepStatsPeriod.TODAY -> "Today"
     SleepStatsPeriod.LAST_7_DAYS -> "Last 7 Days"
     SleepStatsPeriod.LAST_30_DAYS -> "Last 30 Days"
     SleepStatsPeriod.LAST_365_DAYS -> "Last Year"
@@ -53,6 +59,7 @@ private fun periodLabel(period: SleepStatsPeriod): String = when (period) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SleepStatsScreen(
+    onNavigateBack: () -> Unit,
     viewModel: SleepStatsViewModel = hiltViewModel()
 ) {
     val stats by viewModel.stats.collectAsStateWithLifecycle()
@@ -73,6 +80,12 @@ fun SleepStatsScreen(
         ) {
             Spacer(modifier = Modifier.height(4.dp))
 
+            OutlinedButton(onClick = onNavigateBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Back to Sleep Log")
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -90,6 +103,7 @@ fun SleepStatsScreen(
 
             SleepLensCard(title = "Naps", stats = stats.nap)
             SleepLensCard(title = "Night Sleep", stats = stats.night)
+            SleepLensCard(title = "Wake Window", stats = stats.wakeWindow)
             SleepLensCard(title = "Total (Naps + Night)", stats = stats.combined)
 
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -135,10 +149,10 @@ private fun SleepLensCard(title: String, stats: SleepLensStats) {
             if (stats.sessionCount != null) {
                 SleepStatRow("Sessions", "${stats.sessionCount}")
                 SleepStatRow("Sessions / Day", "%.1f".format(stats.avgSessionsPerDay ?: 0f))
-                stats.avgSessionDurationMinutes?.let { SleepStatRow("Avg Length", formatDuration(it)) }
+                stats.avgSessionDurationMinutes?.let { SleepStatRow("Average Length", formatDuration(it)) }
             }
             SleepStatRow("Total Time", formatDuration(stats.totalMinutes))
-            SleepStatRow("Avg / Day", formatDuration(stats.avgMinutesPerDay))
+            SleepStatRow("Average / Day", formatDuration(stats.avgMinutesPerDay))
         }
     }
 }

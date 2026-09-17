@@ -451,7 +451,7 @@ fun NavGraph(
                 LaunchedEffect(babyUiState.selectedBaby?.id) {
                     babyUiState.selectedBaby?.id?.let { vm.setActiveBabyId(it) }
                 }
-                SleepStatsScreen()
+                SleepStatsScreen(onNavigateBack = { navController.popBackStack() })
             }
             composable(Routes.SUMMARY) {
                 val vm: SummaryViewModel = hiltViewModel()
