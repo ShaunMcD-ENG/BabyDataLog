@@ -15,7 +15,8 @@ fun rememberElapsedSeconds(referenceMs: Long?): Long {
     LaunchedEffect(referenceMs) {
         if (referenceMs != null) {
             while (true) {
-                elapsedSeconds = (System.currentTimeMillis() - referenceMs) / 1000L
+                // Never negative, even if a reference time is somehow in the future.
+                elapsedSeconds = ((System.currentTimeMillis() - referenceMs) / 1000L).coerceAtLeast(0L)
                 delay(1000L)
             }
         } else {

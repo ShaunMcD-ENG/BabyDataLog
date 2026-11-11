@@ -196,7 +196,7 @@ class SleepStatsTest {
     }
 
     @Test
-    fun computeSleepStats_overnightSession_countsOnBothDays() {
+    fun computeSleepStats_overnightSession_countsOnce() {
         val day1Start = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
         val now = day1Start + 40 * 3_600_000L // well into day 2
         val overnight = session(
@@ -206,9 +206,51 @@ class SleepStatsTest {
             type = SleepType.NIGHT
         )
         val stats = computeSleepStats(listOf(overnight), SleepStatsPeriod.LAST_7_DAYS, now, UTC)
-        // one physical session, split across 2 days -> count of 2 (spec §5.1's stated consequence)
-        assertEquals(2, stats.night.sessionCount)
-        assertEquals(600f, stats.night.totalMinutes, 0.01f) // 10 hours total, unaffected by the split
+        // one physical session -> count of 1, so Average Length is the real 10h, not 5h
+        assertEquals(1, stats.night.sessionCount)
+        assertEquals(600f, stats.night.totalMinutes, 0.01f)
+        assertEquals(600f, stats.night.avgSessionDurationMinutes!!, 0.01f)
+    }
+
+    @Test
+    fun computeSleepStats_overlappingDuplicates_notDoubleCounted() {
+        val now = 1_700_000_000_000L
+        val sessions = listOf(
+            session(id = 1, startMs = now - 4 * 3_600_000L, endMs = now - 2 * 3_600_000L, type = SleepType.NAP),
+            // same nap logged again by the other parent, slightly offset
+            session(id = 2, startMs = now - 4 * 3_600_000L + 300_000L, endMs = now - 2 * 3_600_000L, type = SleepType.NAP)
+        )
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
+        assertEquals(1, stats.nap.sessionCount)
+        assertEquals(120f, stats.nap.totalMinutes, 0.01f)
+        assertEquals(120f, stats.combined.totalMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeSleepStats_futureEndTime_cappedAtNow() {
+        val now = 1_700_000_000_000L
+        // started 2h ago, but end mistakenly entered as tomorrow
+        val sessions = listOf(session(startMs = now - 2 * 3_600_000L, endMs = now + DAYS_MS_TEST, type = SleepType.NIGHT))
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
+        assertEquals(120f, stats.night.totalMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeSleepStats_misdatedEndTime_cutOffAtNextEntry() {
+        val now = 1_700_000_000_000L
+        val sessions = listOf(
+            // end mistakenly set ~a day later than it should be
+            session(id = 1, startMs = now - 10 * 3_600_000L, endMs = now + 8 * 3_600_000L, type = SleepType.NIGHT),
+            session(id = 2, startMs = now - 9 * 3_600_000L, endMs = now - 7 * 3_600_000L, type = SleepType.NIGHT),
+            session(id = 3, startMs = now - 3 * 3_600_000L, endMs = now - 2 * 3_600_000L, type = SleepType.NAP)
+        )
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
+        // session 1 only counts until session 2 starts: 10h->7h ago asleep, then the 1h nap
+        assertEquals(180f, stats.night.totalMinutes, 0.01f)
+        assertEquals(240f, stats.combined.totalMinutes, 0.01f)
+        // the real awake gap (7h ago -> 3h ago) is still a wake window
+        assertEquals(1, stats.wakeWindow.sessionCount)
+        assertEquals(240f, stats.wakeWindow.totalMinutes, 0.01f)
     }
 
     @Test
@@ -265,7 +307,7 @@ class SleepStatsTest {
     }
 
     @Test
-    fun computeSleepStats_wakeWindow_crossesMidnight_countsOnBothDays() {
+    fun computeSleepStats_wakeWindow_crossesMidnight_countsOnce() {
         val day1Start = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
         val now = day1Start + 40 * 3_600_000L
         val sessions = listOf(
@@ -273,8 +315,8 @@ class SleepStatsTest {
             session(id = 2, startMs = day1Start + 26 * 3_600_000L, endMs = day1Start + 27 * 3_600_000L, type = SleepType.NAP)  // starts 2am day2
         )
         val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
-        // 4 hour gap (10pm-2am) split at midnight -> 2 wake-window "sessions"
-        assertEquals(2, stats.wakeWindow.sessionCount)
+        // one 4 hour gap (10pm-2am) -> one wake window, even though it crosses midnight
+        assertEquals(1, stats.wakeWindow.sessionCount)
         assertEquals(240f, stats.wakeWindow.totalMinutes, 0.01f)
     }
 
@@ -511,6 +553,88 @@ class SleepStatsTest {
         val summary = computeLast24HourSleepAwake(emptyList(), now)
         assertEquals(0f, summary.sleepMinutes, 0.01f)
         assertEquals(24 * 60f, summary.awakeMinutes, 0.01f)
+    }
+
+    @Test
+    fun currentSleepStatus_latestOpenSession_isAsleepSinceItsStart() {
+        val now = 1_700_000_000_000L
+        val sessions = listOf(
+            session(id = 1, startMs = now - 5 * 3_600_000L, endMs = now - 4 * 3_600_000L),
+            session(id = 2, startMs = now - 30 * 60_000L, endMs = null)
+        )
+        val status = currentSleepStatus(sessions, now)
+        assertTrue(status.isAsleep)
+        assertEquals(2L, status.openSession?.id)
+        assertEquals(now - 30 * 60_000L, status.sinceMs)
+    }
+
+    @Test
+    fun currentSleepStatus_olderUnfinishedSession_ignoredOnceNewerOneLogged() {
+        val now = 1_700_000_000_000L
+        val sessions = listOf(
+            session(id = 1, startMs = now - 6 * 3_600_000L, endMs = null),                 // forgotten "Woke up"
+            session(id = 2, startMs = now - 2 * 3_600_000L, endMs = now - 1 * 3_600_000L)  // newer, finished
+        )
+        val status = currentSleepStatus(sessions, now)
+        assertEquals(false, status.isAsleep)
+        assertEquals(now - 1 * 3_600_000L, status.sinceMs)
+    }
+
+    @Test
+    fun currentSleepStatus_futureStart_ignored() {
+        val now = 1_700_000_000_000L
+        val sessions = listOf(
+            session(id = 1, startMs = now - 2 * 3_600_000L, endMs = now - 1 * 3_600_000L),
+            session(id = 2, startMs = now + 3_600_000L, endMs = null)
+        )
+        assertEquals(now - 1 * 3_600_000L, currentSleepStatus(sessions, now).sinceMs)
+    }
+
+    @Test
+    fun currentSleepStatus_noSessions_awakeWithNoSince() {
+        val status = currentSleepStatus(emptyList(), 1_700_000_000_000L)
+        assertEquals(false, status.isAsleep)
+        assertEquals(null, status.sinceMs)
+    }
+
+    @Test
+    fun currentSleepStatus_futureEndTimeOnOlderEntry_doesNotGoNegative() {
+        val now = 1_700_000_000_000L
+        // the real-data bug: a night entry started ~43h ago with its end mistakenly set ~8h in the future,
+        // plus a normal nap that ended 2h ago
+        val sessions = listOf(
+            session(id = 1, startMs = now - 43 * 3_600_000L, endMs = now + 8 * 3_600_000L, type = SleepType.NIGHT),
+            session(id = 2, startMs = now - 3 * 3_600_000L, endMs = now - 2 * 3_600_000L)
+        )
+        val status = currentSleepStatus(sessions, now)
+        // the nap is the latest-started entry, so baby is awake since it ended — not negative
+        assertEquals(false, status.isAsleep)
+        assertEquals(now - 2 * 3_600_000L, status.sinceMs)
+        // and the bad entry stops counting once the nap starts, instead of filling all 24h
+        val summary = computeLast24HourSleepAwake(sessions, now)
+        assertEquals(22 * 60f, summary.sleepMinutes, 0.01f) // 24h ago -> 3h ago, then the 1h nap
+    }
+
+    @Test
+    fun computeLast24HourSleepAwake_orphanedOpenSession_onlyCountsUntilNextSessionStarts() {
+        val now = 1_700_000_000_000L
+        val sessions = listOf(
+            session(id = 1, startMs = now - 20 * 3_600_000L, endMs = null),                 // never ended
+            session(id = 2, startMs = now - 18 * 3_600_000L, endMs = now - 17 * 3_600_000L) // a later nap
+        )
+        val summary = computeLast24HourSleepAwake(sessions, now)
+        // orphan: 20h ago -> 18h ago (2h), then the nap (1h) = 3h, not 20h
+        assertEquals(180f, summary.sleepMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeLast24HourSleepAwake_overlappingSessions_notDoubleCounted() {
+        val now = 1_700_000_000_000L
+        val sessions = listOf(
+            session(id = 1, startMs = now - 5 * 3_600_000L, endMs = now - 3 * 3_600_000L),
+            session(id = 2, startMs = now - 4 * 3_600_000L, endMs = now - 2 * 3_600_000L)
+        )
+        assertEquals(180f, computeLast24HourSleepAwake(sessions, now).sleepMinutes, 0.01f)
     }
 
     @Test

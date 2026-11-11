@@ -5,8 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.babydatalog.app.data.database.entity.SleepSession
 import com.babydatalog.app.data.database.entity.SleepType
 import com.babydatalog.app.data.repository.SleepRepository
+import com.babydatalog.app.utils.CurrentSleepStatus
 import com.babydatalog.app.utils.SleepAwakeSummary
 import com.babydatalog.app.utils.computeLast24HourSleepAwake
+import com.babydatalog.app.utils.currentSleepStatus
 import com.babydatalog.app.utils.defaultSleepTypeForStart
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,17 +54,11 @@ class SleepViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val currentOpenSession: StateFlow<SleepSession?> = _activeBabyId
-        .flatMapLatest { id ->
-            if (id != null) sleepRepository.getOpenSleepSession(id) else flowOf(null)
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-
-    val lastClosedSession: StateFlow<SleepSession?> = _activeBabyId
-        .flatMapLatest { id ->
-            if (id != null) sleepRepository.getLastClosedSleepSession(id) else flowOf(null)
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    // Driven by the most recently started session only (see currentSleepStatus), so an
+    // older unfinished or mis-dated entry can't hijack the live asleep/awake timer.
+    val sleepStatus: StateFlow<CurrentSleepStatus> = sleepSessions
+        .map { currentSleepStatus(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CurrentSleepStatus(null, null))
 
     val last24HourSummary: StateFlow<SleepAwakeSummary> = sleepSessions
         .map { computeLast24HourSleepAwake(it) }
@@ -109,7 +105,7 @@ class SleepViewModel @Inject constructor(
     // Primary contextual action — "Woke up" (spec §4.1). Callable regardless of
     // which device started the open session.
     fun quickEnd() {
-        val open = currentOpenSession.value ?: return
+        val open = sleepStatus.value.openSession ?: return
         viewModelScope.launch { sleepRepository.endSleep(open) }
     }
 
@@ -139,6 +135,15 @@ class SleepViewModel @Inject constructor(
 
         if (endTime != null && endTime <= state.startTimeMs) {
             _formState.update { it.copy(error = "End time must be after start time") }
+            return
+        }
+
+        // A future time is almost always a wrong date picked in the picker, and would
+        // corrupt the live awake/asleep timers and 24h totals. Allow a minute of slack
+        // for clock drift between the two parents' phones.
+        val latestAllowedMs = System.currentTimeMillis() + 60_000L
+        if (state.startTimeMs > latestAllowedMs || (endTime != null && endTime > latestAllowedMs)) {
+            _formState.update { it.copy(error = "Start and end times can't be in the future — check the date") }
             return
         }
 

@@ -16,8 +16,8 @@ data class DaySlice(val date: LocalDate, val startMs: Long, val endMs: Long, val
 
 /**
  * Splits a raw [start, end) range into per-local-day portions at midnight. Shared core
- * behind [splitAcrossDays] and the wake-window gap computation in [computeSleepStats],
- * neither of which needs a [SleepType] attached to the pieces.
+ * behind [splitAcrossDays] and the per-day/per-hour chart slicing, the latter of which
+ * doesn't need a [SleepType] attached to the pieces.
  */
 private fun splitRangeAcrossDays(start: Long, end: Long, zone: ZoneId): List<Triple<LocalDate, Long, Long>> {
     if (end <= start) return emptyList()
@@ -52,6 +52,81 @@ fun splitAcrossDays(session: SleepSession, zone: ZoneId = ZoneId.systemDefault()
     val end = session.endTimeMs ?: return emptyList()
     return splitRangeAcrossDays(session.startTimeMs, end, zone)
         .map { (date, sliceStart, sliceEnd) -> DaySlice(date, sliceStart, sliceEnd, session.type) }
+}
+
+/**
+ * Unions overlapping or touching [start, end) ranges, so duplicate or overlapping
+ * entries (e.g. a session re-logged by the other parent) aren't counted twice.
+ * Empty/negative ranges are dropped.
+ */
+internal fun mergeIntervals(intervals: List<Pair<Long, Long>>): List<Pair<Long, Long>> {
+    val merged = mutableListOf<Pair<Long, Long>>()
+    for ((start, end) in intervals.filter { it.second > it.first }.sortedBy { it.first }) {
+        val last = merged.lastOrNull()
+        if (last != null && start <= last.second) {
+            merged[merged.lastIndex] = last.first to maxOf(last.second, end)
+        } else {
+            merged += start to end
+        }
+    }
+    return merged
+}
+
+/**
+ * Each session's effective [start, end) where the later-started entry wins: a session is
+ * cut off at the next session's start, so one entry with a wrong (e.g. next-day) end time
+ * can't swallow everything logged after it, and an unfinished one only runs until the next
+ * entry begins (or until now, if it's the latest). Ends are capped at [nowMs]; sessions
+ * starting in the future are dropped as entry mistakes.
+ */
+private fun effectiveRanges(sessions: List<SleepSession>, nowMs: Long): List<Pair<SleepSession, Pair<Long, Long>>> {
+    val sorted = sessions.filter { it.startTimeMs <= nowMs }.sortedBy { it.startTimeMs }
+    return sorted.mapIndexed { i, s ->
+        val nextStart = sorted.getOrNull(i + 1)?.startTimeMs ?: Long.MAX_VALUE
+        s to (s.startTimeMs to minOf(s.endTimeMs ?: nowMs, nextStart, nowMs))
+    }
+}
+
+/**
+ * Closed sessions' merged sleep ranges (see [effectiveRanges]), optionally only those of
+ * [type]. Cut-offs are decided across all closed sessions, so a night entry still bounds
+ * an overlapping nap even when only naps are being totalled.
+ */
+private fun closedSleepIntervals(sessions: List<SleepSession>, nowMs: Long, type: SleepType? = null): List<Pair<Long, Long>> =
+    mergeIntervals(
+        effectiveRanges(sessions.filter { it.endTimeMs != null }, nowMs)
+            .filter { (s, _) -> type == null || s.type == type }
+            .map { it.second }
+    )
+
+private fun List<Pair<Long, Long>>.clippedTo(startMs: Long, endMs: Long): List<Pair<Long, Long>> =
+    mapNotNull { (s, e) ->
+        val clippedStart = maxOf(s, startMs)
+        val clippedEnd = minOf(e, endMs)
+        if (clippedStart < clippedEnd) clippedStart to clippedEnd else null
+    }
+
+/**
+ * The live asleep/awake state, decided by the most recently *started* session only, so
+ * an older session left open (or with a bad end time) can't override what's happening
+ * now. Asleep → [sinceMs] is the latest session's start; awake → its end. [sinceMs] is
+ * null when there are no sessions at all. [openSession] is the session "Woke up" ends.
+ */
+data class CurrentSleepStatus(val openSession: SleepSession?, val sinceMs: Long?) {
+    val isAsleep: Boolean get() = openSession != null
+}
+
+fun currentSleepStatus(sessions: List<SleepSession>, nowMs: Long = System.currentTimeMillis()): CurrentSleepStatus {
+    // Sessions starting in the future are entry mistakes — ignore them rather than
+    // letting them become "the latest".
+    val latest = sessions.filter { it.startTimeMs <= nowMs }.maxByOrNull { it.startTimeMs }
+        ?: return CurrentSleepStatus(openSession = null, sinceMs = null)
+    val end = latest.endTimeMs
+    return if (end == null) {
+        CurrentSleepStatus(openSession = latest, sinceMs = latest.startTimeMs)
+    } else {
+        CurrentSleepStatus(openSession = null, sinceMs = minOf(end, nowMs))
+    }
 }
 
 /**
@@ -111,12 +186,14 @@ private fun lensStats(durations: List<Pair<Long, Long>>, dayCount: Float, includ
 
 /**
  * Per-lens (Nap / Night / Wake Window / Combined) totals for the selected period. Open
- * sessions are excluded entirely (spec §5.2 / Q19); overnight sessions are split at
- * local midnight first (spec §5.1) so a session that only partly overlaps the period
- * contributes only its overlapping portion. Wake Window is the gap between one closed
- * session's end and the next closed session's start (sessions sorted by start time) —
- * the stretch after the most-recent session's end has no "next" session yet, so it's an
- * open wake window and is excluded, mirroring how an open sleep session is excluded.
+ * sessions are excluded entirely (spec §5.2 / Q19); a session that only partly overlaps
+ * the period contributes only its overlapping portion. Overlapping entries are resolved
+ * first (see [effectiveRanges]) so duplicates don't double-count, and an overnight session counts as ONE session
+ * (not one per calendar day) so "Average Length" reflects real session lengths — midnight
+ * splitting only matters for the per-day charts, not for totals over a continuous window.
+ * Wake Window is the gap between one sleep block's end and the next block's start — the
+ * stretch after the most-recent sleep has no "next" sleep yet, so it's an open wake window
+ * and is excluded, mirroring how an open sleep session is excluded.
  */
 fun computeSleepStats(
     sessions: List<SleepSession>,
@@ -128,25 +205,15 @@ fun computeSleepStats(
     val startMs = periodStartMs(period, closed, nowMs, zone)
     val dayCount = ((nowMs - startMs) / DAY_MS.toDouble()).coerceAtLeast(1.0).toFloat()
 
-    fun clippedDurations(rawSlices: List<Triple<LocalDate, Long, Long>>): List<Pair<Long, Long>> =
-        rawSlices.mapNotNull { (_, sliceStart, sliceEnd) ->
-            val clippedStart = maxOf(sliceStart, startMs)
-            val clippedEnd = minOf(sliceEnd, nowMs)
-            if (clippedStart < clippedEnd) clippedStart to clippedEnd else null
-        }
-
-    fun durationsFor(type: SleepType) = clippedDurations(
-        closed.filter { it.type == type }.flatMap { splitRangeAcrossDays(it.startTimeMs, it.endTimeMs!!, zone) }
-    )
+    val allBlocks = closedSleepIntervals(closed, nowMs)
+    fun durationsFor(type: SleepType) = closedSleepIntervals(closed, nowMs, type).clippedTo(startMs, nowMs)
 
     val napDurations = durationsFor(SleepType.NAP)
     val nightDurations = durationsFor(SleepType.NIGHT)
-    val allDurations = clippedDurations(closed.flatMap { splitRangeAcrossDays(it.startTimeMs, it.endTimeMs!!, zone) })
-    val wakeWindowDurations = clippedDurations(
-        closed.sortedBy { it.startTimeMs }
-            .zipWithNext()
-            .flatMap { (prev, next) -> splitRangeAcrossDays(prev.endTimeMs!!, next.startTimeMs, zone) }
-    )
+    val allDurations = allBlocks.clippedTo(startMs, nowMs)
+    val wakeWindowDurations = allBlocks.zipWithNext()
+        .map { (prev, next) -> prev.second to next.first }
+        .clippedTo(startMs, nowMs)
 
     return SleepStats(
         nap = lensStats(napDurations, dayCount, includeCount = true),
@@ -166,25 +233,26 @@ enum class SleepLens { NAP, NIGHT, COMBINED }
  */
 data class SleepHistogram(val hourlyMinutesAsleep: List<Float>)
 
+/**
+ * The lens's closed sleep, with overlaps resolved (so they don't double-count), clipped to
+ * [startMs, nowMs], then split at local midnight (spec §5.1) into (date, start, end) slices
+ * for the per-day/per-hour charts.
+ */
 private fun clippedLensSlices(
     closed: List<SleepSession>,
     lens: SleepLens,
     startMs: Long,
     nowMs: Long,
     zone: ZoneId
-): List<DaySlice> = closed.flatMap { splitAcrossDays(it, zone) }
-    .mapNotNull { slice ->
-        val clippedStart = maxOf(slice.startMs, startMs)
-        val clippedEnd = minOf(slice.endMs, nowMs)
-        if (clippedStart < clippedEnd) slice.copy(startMs = clippedStart, endMs = clippedEnd) else null
+): List<Triple<LocalDate, Long, Long>> {
+    val lensType = when (lens) {
+        SleepLens.COMBINED -> null
+        SleepLens.NAP -> SleepType.NAP
+        SleepLens.NIGHT -> SleepType.NIGHT
     }
-    .filter {
-        when (lens) {
-            SleepLens.COMBINED -> true
-            SleepLens.NAP -> it.type == SleepType.NAP
-            SleepLens.NIGHT -> it.type == SleepType.NIGHT
-        }
-    }
+    return closedSleepIntervals(closed, nowMs, lensType).clippedTo(startMs, nowMs)
+        .flatMap { (s, e) -> splitRangeAcrossDays(s, e, zone) }
+}
 
 /**
  * For each local hour-of-day, the average number of minutes (0..60) the baby was recorded
@@ -204,12 +272,12 @@ fun computeSleepHistogram(
     val slices = clippedLensSlices(closed, lens, startMs, nowMs, zone)
 
     val minutesByHour = DoubleArray(24)
-    for (slice in slices) {
-        var cursorMs = slice.startMs
-        while (cursorMs < slice.endMs) {
+    for ((_, sliceStart, sliceEnd) in slices) {
+        var cursorMs = sliceStart
+        while (cursorMs < sliceEnd) {
             val zdt = Instant.ofEpochMilli(cursorMs).atZone(zone)
             val nextHourMs = zdt.plusHours(1).withMinute(0).withSecond(0).withNano(0).toInstant().toEpochMilli()
-            val segmentEndMs = minOf(slice.endMs, nextHourMs)
+            val segmentEndMs = minOf(sliceEnd, nextHourMs)
             minutesByHour[zdt.hour] += (segmentEndMs - cursorMs) / 60_000.0
             cursorMs = segmentEndMs
         }
@@ -246,8 +314,8 @@ fun computeDailySleepTotals(
         minutesByDate[d] = 0f
         d = d.plusDays(1)
     }
-    for (slice in slices) {
-        minutesByDate[slice.date] = (minutesByDate[slice.date] ?: 0f) + (slice.endMs - slice.startMs) / 60_000f
+    for ((date, sliceStart, sliceEnd) in slices) {
+        minutesByDate[date] = (minutesByDate[date] ?: 0f) + (sliceEnd - sliceStart) / 60_000f
     }
     return minutesByDate.map { (date, minutes) -> DailySleepTotal(date, minutes) }
 }
@@ -271,8 +339,8 @@ fun computeMonthlySleepAverages(
     val slices = clippedLensSlices(closed, lens, startMs, nowMs, zone)
 
     val minutesByDate = HashMap<LocalDate, Float>()
-    for (slice in slices) {
-        minutesByDate[slice.date] = (minutesByDate[slice.date] ?: 0f) + (slice.endMs - slice.startMs) / 60_000f
+    for ((date, sliceStart, sliceEnd) in slices) {
+        minutesByDate[date] = (minutesByDate[date] ?: 0f) + (sliceEnd - sliceStart) / 60_000f
     }
 
     val dayCountByMonth = LinkedHashMap<YearMonth, Int>()
@@ -301,7 +369,10 @@ data class SleepAwakeSummary(val sleepMinutes: Float, val awakeMinutes: Float)
  * Sleep/awake split over the trailing 24 hours. Unlike [computeSleepStats], an open
  * (in-progress) session is NOT excluded — it's treated as ending "now", so the live
  * status card's totals reflect the baby's current state instead of only sessions that
- * have already closed. Awake is simply the remainder of the 24-hour window.
+ * have already closed. Any session — including an older one left open, or one with a bad
+ * end time — only counts up to the next session's start (see [effectiveRanges]), so a
+ * forgotten "Woke up" or a mis-dated entry can't swallow the whole window.
+ * Awake is simply the remainder of the 24-hour window.
  */
 fun computeLast24HourSleepAwake(
     sessions: List<SleepSession>,
@@ -309,11 +380,25 @@ fun computeLast24HourSleepAwake(
 ): SleepAwakeSummary {
     val windowStart = nowMs - DAY_MS
     val windowMinutes = DAY_MS / 60_000f
-    val sleepMinutes = sessions.sumOf { session ->
-        val end = session.endTimeMs ?: nowMs
-        val clippedStart = maxOf(session.startTimeMs, windowStart)
-        val clippedEnd = minOf(end, nowMs)
-        if (clippedStart < clippedEnd) (clippedEnd - clippedStart) / 60_000.0 else 0.0
-    }.toFloat().coerceIn(0f, windowMinutes)
+    val sleepMinutes = mergeIntervals(effectiveRanges(sessions, nowMs).map { it.second }).clippedTo(windowStart, nowMs)
+        .sumOf { (s, e) -> (e - s) / 60_000.0 }.toFloat().coerceIn(0f, windowMinutes)
     return SleepAwakeSummary(sleepMinutes, windowMinutes - sleepMinutes)
+}
+
+/** Distinct sleep blocks and total minutes asleep within [startMs, endMs), closed sessions only. */
+data class SleepRangeTotals(val sessionCount: Int, val totalMinutes: Float)
+
+/**
+ * Used by the Summary screen's sleep card. Overlapping entries are resolved first and an
+ * overnight session counts once (not once per calendar day it touches); only the portion
+ * inside the range contributes minutes.
+ */
+fun computeSleepTotalsInRange(
+    sessions: List<SleepSession>,
+    startMs: Long,
+    endMs: Long,
+    nowMs: Long = System.currentTimeMillis()
+): SleepRangeTotals {
+    val blocks = closedSleepIntervals(sessions, nowMs).clippedTo(startMs, endMs)
+    return SleepRangeTotals(blocks.size, blocks.sumOf { (s, e) -> (e - s) / 60_000.0 }.toFloat())
 }

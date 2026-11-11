@@ -48,6 +48,7 @@ import com.babydatalog.app.ui.components.ConfirmDeleteDialog
 import com.babydatalog.app.ui.components.EmptyStateMessage
 import com.babydatalog.app.ui.components.formatElapsed
 import com.babydatalog.app.ui.components.rememberElapsedSeconds
+import com.babydatalog.app.utils.CurrentSleepStatus
 import com.babydatalog.app.utils.SleepAwakeSummary
 import com.babydatalog.app.utils.formatDuration
 import com.babydatalog.app.utils.toDisplayDateTime
@@ -62,8 +63,7 @@ fun SleepListScreen(
     viewModel: SleepViewModel = hiltViewModel()
 ) {
     val sessions by viewModel.sleepSessions.collectAsStateWithLifecycle()
-    val openSession by viewModel.currentOpenSession.collectAsStateWithLifecycle()
-    val lastClosedSession by viewModel.lastClosedSession.collectAsStateWithLifecycle()
+    val sleepStatus by viewModel.sleepStatus.collectAsStateWithLifecycle()
     val last24HourSummary by viewModel.last24HourSummary.collectAsStateWithLifecycle()
     var pendingDelete by remember { mutableStateOf<SleepSession?>(null) }
 
@@ -96,8 +96,7 @@ fun SleepListScreen(
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             SleepToggleCard(
-                openSession = openSession,
-                lastClosedSession = lastClosedSession,
+                sleepStatus = sleepStatus,
                 last24HourSummary = last24HourSummary,
                 onStart = viewModel::quickStart,
                 onEnd = viewModel::quickEnd
@@ -148,8 +147,7 @@ fun SleepListScreen(
 
 @Composable
 private fun SleepToggleCard(
-    openSession: SleepSession?,
-    lastClosedSession: SleepSession?,
+    sleepStatus: CurrentSleepStatus,
     last24HourSummary: SleepAwakeSummary,
     onStart: () -> Unit,
     onEnd: () -> Unit
@@ -160,8 +158,8 @@ private fun SleepToggleCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top
         ) {
-            if (openSession != null) {
-                val elapsedSeconds = rememberElapsedSeconds(openSession.startTimeMs)
+            if (sleepStatus.isAsleep) {
+                val elapsedSeconds = rememberElapsedSeconds(sleepStatus.sinceMs)
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -177,10 +175,10 @@ private fun SleepToggleCard(
                     Button(onClick = onEnd) { Text("Woke Up") }
                 }
             } else {
-                val elapsedSeconds = rememberElapsedSeconds(lastClosedSession?.endTimeMs)
+                val elapsedSeconds = rememberElapsedSeconds(sleepStatus.sinceMs)
                 Column {
                     Text("Baby is awake", style = MaterialTheme.typography.titleMedium)
-                    if (lastClosedSession != null) {
+                    if (sleepStatus.sinceMs != null) {
                         Text(
                             text = "Awake for ${formatElapsed(elapsedSeconds)}",
                             style = MaterialTheme.typography.bodyMedium,

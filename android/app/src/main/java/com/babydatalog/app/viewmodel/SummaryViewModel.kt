@@ -11,7 +11,7 @@ import com.babydatalog.app.utils.WeightGrowthStats
 import com.babydatalog.app.utils.computeWeightGrowthStats
 import com.babydatalog.app.utils.monthEndMs
 import com.babydatalog.app.utils.monthStartMs
-import com.babydatalog.app.utils.splitAcrossDays
+import com.babydatalog.app.utils.computeSleepTotalsInRange
 import com.babydatalog.app.utils.todayEndMs
 import com.babydatalog.app.utils.todayStartMs
 import com.babydatalog.app.utils.weekEndMs
@@ -206,14 +206,8 @@ class SummaryViewModel @Inject constructor(
             if (babyId == null) return@flatMapLatest flowOf(SleepSummaryStats())
             val (startMs, endMs) = periodRange(period)
             sleepRepository.getSleepSessionsForBaby(babyId).map { sessions ->
-                val slices = sessions
-                    .filter { it.endTimeMs != null }
-                    .flatMap { splitAcrossDays(it) }
-                    .filter { it.startMs < endMs && it.endMs > startMs }
-                SleepSummaryStats(
-                    sessionCount = slices.size,
-                    totalSleepMinutes = slices.sumOf { (it.endMs - it.startMs) / 60_000.0 }.toFloat()
-                )
+                val totals = computeSleepTotalsInRange(sessions, startMs, endMs)
+                SleepSummaryStats(sessionCount = totals.sessionCount, totalSleepMinutes = totals.totalMinutes)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SleepSummaryStats())

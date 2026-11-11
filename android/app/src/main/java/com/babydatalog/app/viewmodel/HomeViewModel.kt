@@ -4,12 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.babydatalog.app.data.database.entity.FeedingSession
 import com.babydatalog.app.data.database.entity.NappyChange
-import com.babydatalog.app.data.database.entity.SleepSession
 import com.babydatalog.app.data.repository.FeedingRepository
 import com.babydatalog.app.data.repository.NappyRepository
 import com.babydatalog.app.data.repository.SleepRepository
+import com.babydatalog.app.utils.CurrentSleepStatus
 import com.babydatalog.app.utils.SleepAwakeSummary
 import com.babydatalog.app.utils.computeLast24HourSleepAwake
+import com.babydatalog.app.utils.currentSleepStatus
 import com.babydatalog.app.utils.defaultSleepTypeForStart
 import com.babydatalog.app.utils.todayEndMs
 import com.babydatalog.app.utils.todayStartMs
@@ -71,23 +72,19 @@ class HomeViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    val currentSleepSession: StateFlow<SleepSession?> = _activeBabyId
+    private val sleepSessions = _activeBabyId
         .flatMapLatest { id ->
-            if (id != null) sleepRepository.getOpenSleepSession(id) else flowOf(null)
+            if (id != null) sleepRepository.getSleepSessionsForBaby(id) else flowOf(emptyList())
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    val lastClosedSleepSession: StateFlow<SleepSession?> = _activeBabyId
-        .flatMapLatest { id ->
-            if (id != null) sleepRepository.getLastClosedSleepSession(id) else flowOf(null)
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    // Driven by the most recently started session only (see currentSleepStatus), so an
+    // older unfinished or mis-dated entry can't hijack the live asleep/awake timer.
+    val sleepStatus: StateFlow<CurrentSleepStatus> = sleepSessions
+        .map { currentSleepStatus(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CurrentSleepStatus(null, null))
 
-    val last24HourSummary: StateFlow<SleepAwakeSummary> = _activeBabyId
-        .flatMapLatest { id ->
-            if (id != null) sleepRepository.getSleepSessionsForBaby(id).map { computeLast24HourSleepAwake(it) }
-            else flowOf(computeLast24HourSleepAwake(emptyList()))
-        }
+    val last24HourSummary: StateFlow<SleepAwakeSummary> = sleepSessions
+        .map { computeLast24HourSleepAwake(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), computeLast24HourSleepAwake(emptyList()))
 
     fun quickStartSleep() {
@@ -99,7 +96,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun quickEndSleep() {
-        val open = currentSleepSession.value ?: return
+        val open = sleepStatus.value.openSession ?: return
         viewModelScope.launch { sleepRepository.endSleep(open) }
     }
 

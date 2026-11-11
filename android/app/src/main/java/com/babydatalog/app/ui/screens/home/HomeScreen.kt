@@ -79,8 +79,7 @@ fun HomeScreen(
     val todayFeedingCount by viewModel.todayFeedingCount.collectAsStateWithLifecycle()
     val todayNappyCount by viewModel.todayNappyCount.collectAsStateWithLifecycle()
     val latestMeasurement by growthViewModel.latestMeasurement.collectAsStateWithLifecycle()
-    val currentSleepSession by viewModel.currentSleepSession.collectAsStateWithLifecycle()
-    val lastClosedSleepSession by viewModel.lastClosedSleepSession.collectAsStateWithLifecycle()
+    val sleepStatus by viewModel.sleepStatus.collectAsStateWithLifecycle()
     val last24HourSummary by viewModel.last24HourSummary.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -194,8 +193,8 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.Top
                     ) {
-                        if (currentSleepSession != null) {
-                            val elapsedSeconds = rememberElapsedSeconds(currentSleepSession?.startTimeMs)
+                        if (sleepStatus.isAsleep) {
+                            val elapsedSeconds = rememberElapsedSeconds(sleepStatus.sinceMs)
                             Column {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Filled.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -211,10 +210,10 @@ fun HomeScreen(
                                 Button(onClick = { viewModel.quickEndSleep() }) { Text("Wake Up") }
                             }
                         } else {
-                            val elapsedSeconds = rememberElapsedSeconds(lastClosedSleepSession?.endTimeMs)
+                            val elapsedSeconds = rememberElapsedSeconds(sleepStatus.sinceMs)
                             Column {
                                 Text("Baby is awake", style = MaterialTheme.typography.titleMedium)
-                                if (lastClosedSleepSession != null) {
+                                if (sleepStatus.sinceMs != null) {
                                     Text(
                                         text = "Awake for ${formatElapsed(elapsedSeconds)}",
                                         style = MaterialTheme.typography.bodyMedium,

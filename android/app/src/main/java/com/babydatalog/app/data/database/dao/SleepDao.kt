@@ -31,9 +31,6 @@ interface SleepDao {
     @Query("SELECT * FROM sleep_sessions WHERE babyId = :babyId AND endTimeMs IS NULL AND deletedAtMs IS NULL ORDER BY startTimeMs DESC LIMIT 1")
     fun getOpenSleepSession(babyId: Long): Flow<SleepSession?>
 
-    @Query("SELECT * FROM sleep_sessions WHERE babyId = :babyId AND endTimeMs IS NOT NULL AND deletedAtMs IS NULL ORDER BY endTimeMs DESC LIMIT 1")
-    fun getLastClosedSleepSession(babyId: Long): Flow<SleepSession?>
-
     @Query("SELECT * FROM sleep_sessions")
     suspend fun getAllForSync(): List<SleepSession>
 
