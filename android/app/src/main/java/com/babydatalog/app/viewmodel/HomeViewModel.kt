@@ -12,12 +12,14 @@ import com.babydatalog.app.utils.SleepAwakeSummary
 import com.babydatalog.app.utils.computeLast24HourSleepAwake
 import com.babydatalog.app.utils.currentSleepStatus
 import com.babydatalog.app.utils.defaultSleepTypeForStart
+import com.babydatalog.app.utils.minuteTicker
 import com.babydatalog.app.utils.todayEndMs
 import com.babydatalog.app.utils.todayStartMs
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -83,8 +85,10 @@ class HomeViewModel @Inject constructor(
         .map { currentSleepStatus(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CurrentSleepStatus(null, null))
 
-    val last24HourSummary: StateFlow<SleepAwakeSummary> = sleepSessions
-        .map { computeLast24HourSleepAwake(it) }
+    // Recomputed every minute while on screen so the trailing-24h totals stay current.
+    val last24HourSummary: StateFlow<SleepAwakeSummary> = combine(sleepSessions, minuteTicker()) { sessions, now ->
+        computeLast24HourSleepAwake(sessions, now)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), computeLast24HourSleepAwake(emptyList()))
 
     fun quickStartSleep() {

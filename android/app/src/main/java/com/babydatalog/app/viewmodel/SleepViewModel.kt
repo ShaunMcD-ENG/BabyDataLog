@@ -7,6 +7,9 @@ import com.babydatalog.app.data.database.entity.SleepType
 import com.babydatalog.app.data.repository.SleepRepository
 import com.babydatalog.app.utils.CurrentSleepStatus
 import com.babydatalog.app.utils.SleepAwakeSummary
+import com.babydatalog.app.utils.WakeWindowStats
+import com.babydatalog.app.utils.computeWakeWindows
+import com.babydatalog.app.utils.minuteTicker
 import com.babydatalog.app.utils.computeLast24HourSleepAwake
 import com.babydatalog.app.utils.currentSleepStatus
 import com.babydatalog.app.utils.defaultSleepTypeForStart
@@ -15,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -60,9 +64,18 @@ class SleepViewModel @Inject constructor(
         .map { currentSleepStatus(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CurrentSleepStatus(null, null))
 
-    val last24HourSummary: StateFlow<SleepAwakeSummary> = sleepSessions
-        .map { computeLast24HourSleepAwake(it) }
+    // Recomputed every minute while on screen, so the trailing-24h totals and the ongoing
+    // wake window keep moving even when no new entry is logged.
+    val last24HourSummary: StateFlow<SleepAwakeSummary> = combine(sleepSessions, minuteTicker()) { sessions, now ->
+        computeLast24HourSleepAwake(sessions, now)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), computeLast24HourSleepAwake(emptyList()))
+
+    // Wake windows that ended in the last 24h (plus the ongoing one), split Day vs Night.
+    val last24HourWakeWindows: StateFlow<WakeWindowStats> = combine(sleepSessions, minuteTicker()) { sessions, now ->
+        computeWakeWindows(sessions, now - 86_400_000L, now)
+    }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), computeWakeWindows(emptyList(), 0L, 0L))
 
     fun setActiveBabyId(id: Long) {
         if (_activeBabyId.value != id) {

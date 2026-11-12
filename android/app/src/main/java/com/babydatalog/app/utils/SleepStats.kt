@@ -159,7 +159,8 @@ data class SleepLensStats(
 data class SleepStats(
     val nap: SleepLensStats,
     val night: SleepLensStats,
-    val wakeWindow: SleepLensStats,
+    val nightWakeWindow: SleepLensStats,
+    val dayWakeWindow: SleepLensStats,
     val combined: SleepLensStats
 )
 
@@ -191,9 +192,8 @@ private fun lensStats(durations: List<Pair<Long, Long>>, dayCount: Float, includ
  * first (see [effectiveRanges]) so duplicates don't double-count, and an overnight session counts as ONE session
  * (not one per calendar day) so "Average Length" reflects real session lengths — midnight
  * splitting only matters for the per-day charts, not for totals over a continuous window.
- * Wake Window is the gap between one sleep block's end and the next block's start — the
- * stretch after the most-recent sleep has no "next" sleep yet, so it's an open wake window
- * and is excluded, mirroring how an open sleep session is excluded.
+ * Wake windows are split into Night (awake between two night sleeps, e.g. overnight feeds)
+ * and Day (morning wake-up → naps → bedtime); see [computeWakeWindows].
  */
 fun computeSleepStats(
     sessions: List<SleepSession>,
@@ -211,15 +211,103 @@ fun computeSleepStats(
     val napDurations = durationsFor(SleepType.NAP)
     val nightDurations = durationsFor(SleepType.NIGHT)
     val allDurations = allBlocks.clippedTo(startMs, nowMs)
-    val wakeWindowDurations = allBlocks.zipWithNext()
-        .map { (prev, next) -> prev.second to next.first }
-        .clippedTo(startMs, nowMs)
+    val wakeWindows = computeWakeWindows(sessions, startMs, nowMs, zone, dayCount)
 
     return SleepStats(
         nap = lensStats(napDurations, dayCount, includeCount = true),
         night = lensStats(nightDurations, dayCount, includeCount = true),
-        wakeWindow = lensStats(wakeWindowDurations, dayCount, includeCount = true),
+        nightWakeWindow = wakeWindows.night,
+        dayWakeWindow = wakeWindows.day,
         combined = lensStats(allDurations, dayCount, includeCount = false)
+    )
+}
+
+/** A run of merged sleep, remembering the type it started and finished as (for wake-window classification). */
+private data class SleepBlock(val startMs: Long, val endMs: Long, val startType: SleepType, val endType: SleepType)
+
+/**
+ * All sleep — INCLUDING the in-progress session (running until now) — resolved with
+ * [effectiveRanges] and merged into contiguous blocks. The open session matters here: it's
+ * what closes the wake window before it, even though its own length isn't final yet.
+ */
+private fun sleepBlocks(sessions: List<SleepSession>, nowMs: Long): List<SleepBlock> {
+    val blocks = mutableListOf<SleepBlock>()
+    for ((session, range) in effectiveRanges(sessions, nowMs)) {
+        val (start, end) = range
+        if (end <= start) continue
+        val last = blocks.lastOrNull()
+        if (last != null && start <= last.endMs) {
+            if (end > last.endMs) blocks[blocks.lastIndex] = last.copy(endMs = end, endType = session.type)
+        } else {
+            blocks += SleepBlock(start, end, session.type, session.type)
+        }
+    }
+    return blocks
+}
+
+/** True if a local 12:00 falls inside (startMs, endMs) — i.e. the gap covers the daytime. */
+private fun spansLocalNoon(startMs: Long, endMs: Long, zone: ZoneId): Boolean {
+    var noon = Instant.ofEpochMilli(startMs).atZone(zone).toLocalDate().atTime(12, 0).atZone(zone)
+    if (noon.toInstant().toEpochMilli() <= startMs) noon = noon.plusDays(1)
+    return noon.toInstant().toEpochMilli() < endMs
+}
+
+/**
+ * A stretch awake between two sleeps. [isNight] = between two night sleeps. [isOngoing] = the
+ * baby is awake right now: it runs from the latest sleep's end until "now" (no next sleep yet).
+ */
+data class WakeWindow(val startMs: Long, val endMs: Long, val isNight: Boolean, val isOngoing: Boolean = false)
+
+/**
+ * Every wake window, oldest first. A window between two sleeps is closed once the next sleep
+ * has STARTED — so the gap before an in-progress nap/night counts straight away. If the baby is
+ * awake now (latest sleep has ended), the time since then is included as an ongoing window that
+ * grows until the next sleep is logged.
+ *
+ * Night = awake between two night sleeps (overnight feeds/wakes). Everything else is Day: the
+ * first window after the last night sleep, the windows between naps, and the one before
+ * bedtime. A night→night gap that covers local noon is also Day — that's a whole day with no
+ * naps logged, not an overnight wake. The ongoing window is always Day: Night strictly means
+ * BETWEEN two night sleeps, so it can only become Night once the next sleep is logged as one
+ * (no clock-based guessing — the user decides what's a night sleep).
+ */
+fun wakeWindows(sessions: List<SleepSession>, nowMs: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()): List<WakeWindow> {
+    val blocks = sleepBlocks(sessions, nowMs)
+    val closed = blocks.zipWithNext().map { (prev, next) ->
+        val night = prev.endType == SleepType.NIGHT && next.startType == SleepType.NIGHT &&
+            !spansLocalNoon(prev.endMs, next.startMs, zone)
+        WakeWindow(prev.endMs, next.startMs, night)
+    }
+    val last = blocks.lastOrNull() ?: return closed
+    if (last.endMs >= nowMs) return closed // asleep right now — no ongoing wake window
+    val ongoing = WakeWindow(
+        startMs = last.endMs,
+        endMs = nowMs,
+        isNight = false,
+        isOngoing = true
+    )
+    return closed + ongoing
+}
+
+data class WakeWindowStats(val night: SleepLensStats, val day: SleepLensStats)
+
+/**
+ * Night/Day wake-window stats for windows that ENDED within [startMs, nowMs] — including the
+ * ongoing one if the baby is awake now (it "ends" at now). Each window is counted whole (not clipped at the period start), so "Average Length" reflects real window
+ * lengths instead of being dragged down by one cut in half at the boundary.
+ */
+fun computeWakeWindows(
+    sessions: List<SleepSession>,
+    startMs: Long,
+    nowMs: Long = System.currentTimeMillis(),
+    zone: ZoneId = ZoneId.systemDefault(),
+    dayCount: Float = ((nowMs - startMs) / DAY_MS.toDouble()).coerceAtLeast(1.0).toFloat()
+): WakeWindowStats {
+    val inPeriod = wakeWindows(sessions, nowMs, zone).filter { it.endMs in (startMs + 1)..nowMs }
+    val (night, day) = inPeriod.partition { it.isNight }
+    return WakeWindowStats(
+        night = lensStats(night.map { it.startMs to it.endMs }, dayCount, includeCount = true),
+        day = lensStats(day.map { it.startMs to it.endMs }, dayCount, includeCount = true)
     )
 }
 

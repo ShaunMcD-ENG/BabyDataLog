@@ -50,6 +50,7 @@ import com.babydatalog.app.ui.components.formatElapsed
 import com.babydatalog.app.ui.components.rememberElapsedSeconds
 import com.babydatalog.app.utils.CurrentSleepStatus
 import com.babydatalog.app.utils.SleepAwakeSummary
+import com.babydatalog.app.utils.WakeWindowStats
 import com.babydatalog.app.utils.formatDuration
 import com.babydatalog.app.utils.toDisplayDateTime
 import com.babydatalog.app.viewmodel.SleepViewModel
@@ -65,6 +66,7 @@ fun SleepListScreen(
     val sessions by viewModel.sleepSessions.collectAsStateWithLifecycle()
     val sleepStatus by viewModel.sleepStatus.collectAsStateWithLifecycle()
     val last24HourSummary by viewModel.last24HourSummary.collectAsStateWithLifecycle()
+    val last24HourWakeWindows by viewModel.last24HourWakeWindows.collectAsStateWithLifecycle()
     var pendingDelete by remember { mutableStateOf<SleepSession?>(null) }
 
     if (pendingDelete != null) {
@@ -98,6 +100,7 @@ fun SleepListScreen(
             SleepToggleCard(
                 sleepStatus = sleepStatus,
                 last24HourSummary = last24HourSummary,
+                wakeWindows = last24HourWakeWindows,
                 onStart = viewModel::quickStart,
                 onEnd = viewModel::quickEnd
             )
@@ -149,6 +152,7 @@ fun SleepListScreen(
 private fun SleepToggleCard(
     sleepStatus: CurrentSleepStatus,
     last24HourSummary: SleepAwakeSummary,
+    wakeWindows: WakeWindowStats,
     onStart: () -> Unit,
     onEnd: () -> Unit
 ) {
@@ -200,6 +204,20 @@ private fun SleepToggleCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                wakeWindows.day.avgSessionDurationMinutes?.let {
+                    Text(
+                        text = "Day wake avg: ${formatDuration(it)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if ((wakeWindows.night.sessionCount ?: 0) > 0) {
+                    Text(
+                        text = "Night wakes: ${wakeWindows.night.sessionCount} · ${formatDuration(wakeWindows.night.totalMinutes)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

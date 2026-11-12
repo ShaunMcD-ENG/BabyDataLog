@@ -248,9 +248,9 @@ class SleepStatsTest {
         // session 1 only counts until session 2 starts: 10h->7h ago asleep, then the 1h nap
         assertEquals(180f, stats.night.totalMinutes, 0.01f)
         assertEquals(240f, stats.combined.totalMinutes, 0.01f)
-        // the real awake gap (7h ago -> 3h ago) is still a wake window
-        assertEquals(1, stats.wakeWindow.sessionCount)
-        assertEquals(240f, stats.wakeWindow.totalMinutes, 0.01f)
+        // the real awake gap (7h ago -> 3h ago) is still a wake window, plus the ongoing 2h since the nap
+        assertEquals(2, stats.dayWakeWindow.sessionCount)
+        assertEquals(360f, stats.dayWakeWindow.totalMinutes, 0.01f)
     }
 
     @Test
@@ -276,21 +276,59 @@ class SleepStatsTest {
             // 2 hour gap between session 1's end and session 2's start
             session(id = 2, startMs = now - 7 * 3_600_000L, endMs = now - 6 * 3_600_000L, type = SleepType.NAP)
         )
-        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
-        assertEquals(1, stats.wakeWindow.sessionCount)
-        assertEquals(120f, stats.wakeWindow.totalMinutes, 0.01f)
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now - 6 * 3_600_000L, UTC)
+        assertEquals(1, stats.dayWakeWindow.sessionCount)
+        assertEquals(120f, stats.dayWakeWindow.totalMinutes, 0.01f)
     }
 
     @Test
-    fun computeSleepStats_wakeWindow_noGapAfterMostRecentSession() {
-        val now = 1_700_000_000_000L
+    fun computeSleepStats_wakeWindow_awakeNow_countsOngoingWindowUpToNow() {
+        val d = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val h = 3_600_000L
         val sessions = listOf(
-            session(id = 1, startMs = now - 10 * 3_600_000L, endMs = now - 9 * 3_600_000L, type = SleepType.NAP)
+            session(id = 1, startMs = d + 10 * h, endMs = d + 11 * h, type = SleepType.NAP)
         )
-        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
-        // only one session -> no "next" session -> no wake window counted
-        assertEquals(0, stats.wakeWindow.sessionCount)
-        assertEquals(0f, stats.wakeWindow.totalMinutes, 0.01f)
+        // awake since 11am, no next nap logged yet -> ongoing 1h day wake window at noon
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, d + 12 * h, UTC)
+        assertEquals(1, stats.dayWakeWindow.sessionCount)
+        assertEquals(60f, stats.dayWakeWindow.totalMinutes, 0.01f)
+        assertEquals(0, stats.nightWakeWindow.sessionCount)
+        // ...and it keeps growing as time passes
+        val later = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, d + 12 * h + 30 * 60_000L, UTC)
+        assertEquals(90f, later.dayWakeWindow.totalMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeSleepStats_wakeWindow_awakeOvernight_ongoingIsDayUntilNextNightSleepLogged() {
+        val d = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val h = 3_600_000L
+        val sessions = listOf(
+            session(id = 1, startMs = d + 19 * h, endMs = d + 26 * h, type = SleepType.NIGHT) // 7pm-2am
+        )
+        // awake for a feed since 2am, now 2:30am, next sleep not logged yet -> Day for now
+        val awake = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, d + 26 * h + 30 * 60_000L, UTC)
+        assertEquals(0, awake.nightWakeWindow.sessionCount)
+        assertEquals(1, awake.dayWakeWindow.sessionCount)
+        assertEquals(30f, awake.dayWakeWindow.totalMinutes, 0.01f)
+        // once the next night sleep is logged (2:40am), the 40m gap becomes a Night wake window
+        val withNext = sessions + session(id = 2, startMs = d + 26 * h + 40 * 60_000L, endMs = null, type = SleepType.NIGHT)
+        val logged = computeSleepStats(withNext, SleepStatsPeriod.LAST_7_DAYS, d + 27 * h, UTC)
+        assertEquals(1, logged.nightWakeWindow.sessionCount)
+        assertEquals(40f, logged.nightWakeWindow.totalMinutes, 0.01f)
+        assertEquals(0, logged.dayWakeWindow.sessionCount)
+    }
+
+    @Test
+    fun computeSleepStats_wakeWindow_awakeMorningAfterNight_ongoingCountsAsDay() {
+        val d = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val h = 3_600_000L
+        val sessions = listOf(
+            session(id = 1, startMs = d + 1 * h, endMs = d + 7 * h, type = SleepType.NIGHT) // ends 7am
+        )
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, d + 8 * h, UTC)
+        assertEquals(1, stats.dayWakeWindow.sessionCount)
+        assertEquals(60f, stats.dayWakeWindow.totalMinutes, 0.01f)
+        assertEquals(0, stats.nightWakeWindow.sessionCount)
     }
 
     @Test
@@ -301,23 +339,72 @@ class SleepStatsTest {
             // overlaps session 1 entirely
             session(id = 2, startMs = now - 9 * 3_600_000L, endMs = now - 8 * 3_600_000L, type = SleepType.NAP)
         )
-        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
-        assertEquals(0, stats.wakeWindow.sessionCount)
-        assertEquals(0f, stats.wakeWindow.totalMinutes, 0.01f)
+        // session 1 is cut off at session 2's start (later entry wins), so sleep ends 8h ago — use that as "now"
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now - 8 * 3_600_000L, UTC)
+        assertEquals(0, stats.dayWakeWindow.sessionCount)
+        assertEquals(0f, stats.dayWakeWindow.totalMinutes, 0.01f)
     }
 
     @Test
     fun computeSleepStats_wakeWindow_crossesMidnight_countsOnce() {
         val day1Start = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
-        val now = day1Start + 40 * 3_600_000L
+        val now = day1Start + 27 * 3_600_000L // right as session 2 ends, so no ongoing window
         val sessions = listOf(
             session(id = 1, startMs = day1Start + 20 * 3_600_000L, endMs = day1Start + 22 * 3_600_000L, type = SleepType.NAP), // ends 10pm day1
             session(id = 2, startMs = day1Start + 26 * 3_600_000L, endMs = day1Start + 27 * 3_600_000L, type = SleepType.NAP)  // starts 2am day2
         )
         val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
         // one 4 hour gap (10pm-2am) -> one wake window, even though it crosses midnight
-        assertEquals(1, stats.wakeWindow.sessionCount)
-        assertEquals(240f, stats.wakeWindow.totalMinutes, 0.01f)
+        assertEquals(1, stats.dayWakeWindow.sessionCount)
+        assertEquals(240f, stats.dayWakeWindow.totalMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeSleepStats_wakeWindow_gapBeforeInProgressSleepIsCounted() {
+        val now = 1_700_000_000_000L
+        val sessions = listOf(
+            session(id = 1, startMs = now - 5 * 3_600_000L, endMs = now - 4 * 3_600_000L, type = SleepType.NAP),
+            // in progress: started 1h ago, the 3h gap before it is a finished wake window
+            session(id = 2, startMs = now - 3_600_000L, endMs = null, type = SleepType.NAP)
+        )
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, now, UTC)
+        assertEquals(1, stats.dayWakeWindow.sessionCount)
+        assertEquals(180f, stats.dayWakeWindow.totalMinutes, 0.01f)
+        // the open session itself is still excluded from sleep totals
+        assertEquals(1, stats.nap.sessionCount)
+    }
+
+    @Test
+    fun computeSleepStats_wakeWindow_splitsNightFromDay() {
+        val d = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val h = 3_600_000L
+        val sessions = listOf(
+            session(id = 1, startMs = d + 19 * h, endMs = d + 23 * h, type = SleepType.NIGHT),          // 7pm-11pm
+            session(id = 2, startMs = d + 23 * h + 30 * 60_000L, endMs = d + 27 * h, type = SleepType.NIGHT), // 11:30pm-3am (30m feed)
+            session(id = 3, startMs = d + 28 * h, endMs = d + 31 * h, type = SleepType.NIGHT),          // 4am-7am (1h feed)
+            session(id = 4, startMs = d + 33 * h, endMs = d + 34 * h, type = SleepType.NAP),            // 9am-10am (2h day)
+            session(id = 5, startMs = d + 37 * h, endMs = d + 38 * h, type = SleepType.NAP),            // 1pm-2pm (3h day)
+            session(id = 6, startMs = d + 42 * h, endMs = null, type = SleepType.NIGHT)                 // 6pm, in progress (4h day)
+        )
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, d + 43 * h, UTC)
+        assertEquals(2, stats.nightWakeWindow.sessionCount)
+        assertEquals(90f, stats.nightWakeWindow.totalMinutes, 0.01f)
+        assertEquals(3, stats.dayWakeWindow.sessionCount)
+        assertEquals(540f, stats.dayWakeWindow.totalMinutes, 0.01f)
+    }
+
+    @Test
+    fun computeSleepStats_wakeWindow_nightToNightAcrossNoonIsDay() {
+        val d = LocalDate.of(2024, 1, 1).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val h = 3_600_000L
+        val sessions = listOf(
+            session(id = 1, startMs = d + 1 * h, endMs = d + 7 * h, type = SleepType.NIGHT),   // ends 7am
+            session(id = 2, startMs = d + 19 * h, endMs = d + 22 * h, type = SleepType.NIGHT)  // bedtime 7pm, no naps logged
+        )
+        val stats = computeSleepStats(sessions, SleepStatsPeriod.LAST_7_DAYS, d + 22 * h, UTC)
+        assertEquals(0, stats.nightWakeWindow.sessionCount)
+        assertEquals(1, stats.dayWakeWindow.sessionCount)
+        assertEquals(720f, stats.dayWakeWindow.totalMinutes, 0.01f)
     }
 
     @Test

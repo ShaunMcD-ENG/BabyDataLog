@@ -188,7 +188,8 @@ fun SleepStatsScreen(
                 }
             }
 
-            SleepLensCard(title = "Wake Window", stats = stats.wakeWindow)
+            SleepLensCard(title = "Day Wake Windows", subtitle = "Morning wake-up → naps → bedtime", stats = stats.dayWakeWindow)
+            SleepLensCard(title = "Night Wake Windows", subtitle = "Awake between night sleeps (e.g. feeds)", stats = stats.nightWakeWindow)
             SleepLensCard(title = "Naps", stats = stats.nap)
             SleepLensCard(title = "Night Sleep", stats = stats.night)
             SleepLensCard(title = "Total (Naps + Night)", stats = stats.combined)
@@ -254,10 +255,11 @@ fun SleepStatsScreen(
 }
 
 @Composable
-private fun SleepLensCard(title: String, stats: SleepLensStats) {
+private fun SleepLensCard(title: String, stats: SleepLensStats, subtitle: String? = null) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(modifier = Modifier.height(8.dp))
             if (stats.sessionCount != null) {
                 SleepStatRow("Sessions", "${stats.sessionCount}")

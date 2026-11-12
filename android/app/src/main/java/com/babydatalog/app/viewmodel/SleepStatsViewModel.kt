@@ -13,6 +13,7 @@ import com.babydatalog.app.utils.computeDailySleepTotals
 import com.babydatalog.app.utils.computeMonthlySleepAverages
 import com.babydatalog.app.utils.computeSleepHistogram
 import com.babydatalog.app.utils.computeSleepStats
+import com.babydatalog.app.utils.minuteTicker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,7 +37,10 @@ class SleepStatsViewModel @Inject constructor(
     val stats: StateFlow<SleepStats> = combine(_activeBabyId, _period) { id, period -> id to period }
         .flatMapLatest { (id, period) ->
             if (id == null) flowOf(computeSleepStats(emptyList(), period))
-            else sleepRepository.getSleepSessionsForBaby(id).map { sessions -> computeSleepStats(sessions, period) }
+            // Ticks each minute while on screen so the ongoing wake window keeps growing.
+            else combine(sleepRepository.getSleepSessionsForBaby(id), minuteTicker()) { sessions, now ->
+                computeSleepStats(sessions, period, now)
+            }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), computeSleepStats(emptyList(), SleepStatsPeriod.LAST_7_DAYS))
 
